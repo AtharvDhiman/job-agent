@@ -21,6 +21,8 @@ from app.schemas.jobs import (
     ManualJobIn,
     MatchOut,
     MatchWithJobOut,
+    QuickAddIn,
+    QuickAddOut,
     SubscriptionIn,
     SubscriptionOut,
 )
@@ -172,10 +174,19 @@ def run_discovery(db: DbSession, user: RequireOperator, score: bool = True) -> D
 def create_manual_job(payload: ManualJobIn, db: DbSession, user: RequireOperator) -> Job:
     """Record a posting yourself. Use this for any site that blocks automation."""
     now = datetime.now(UTC)
+    from app.services import taxonomy
     from app.services.locations import resolve_city, resolve_country
-    from app.services.normalizer import compute_dedupe_hash
+    from app.services.normalizer import (
+        compute_dedupe_hash,
+        detect_sponsorship,
+        extract_requirements,
+    )
 
     country = resolve_country(payload.location_raw)
+    # Even a hand-entered job is scored against the extracted skills of its
+    # description, so run the same extraction the connectors do -- otherwise a
+    # manual job matches nothing and the whole "paste a job" path is dead weight.
+    blob = f"{payload.title}\n{payload.location_raw}\n{payload.description_text}"
     job = Job(
         connector_key="manual",
         compliance_tier=ComplianceTier.MANUAL_ONLY.value,
@@ -203,6 +214,9 @@ def create_manual_job(payload: ManualJobIn, db: DbSession, user: RequireOperator
         deadline_at=payload.deadline_at,
         first_seen_at=now,
         last_seen_at=now,
+        extracted_skills=taxonomy.extract_skills(blob),
+        requirements=extract_requirements(payload.description_text),
+        visa_sponsorship_mentioned=detect_sponsorship(payload.description_text),
         dedupe_hash=compute_dedupe_hash(payload.company, payload.title, country),
         # `jobs` is a shared corpus -- GET /jobs/{id} serves any job to any
         # authenticated account so duplicates can be collapsed across users --
@@ -222,6 +236,115 @@ def create_manual_job(payload: ManualJobIn, db: DbSession, user: RequireOperator
         payload={"source": "manual"},
     )
     return job
+
+
+@router.post("/jobs/quick-add", response_model=QuickAddOut, status_code=status.HTTP_201_CREATED)
+def quick_add_job(payload: QuickAddIn, db: DbSession, user: RequireOperator) -> QuickAddOut:
+    """Paste a job from any site; the agent extracts, scores and drafts it.
+
+    This is the honest path for LinkedIn, Indeed and anything else that forbids
+    automated fetching: you paste the text you are already reading, so nothing
+    is scraped. The agent fills in skills, salary, seniority, arrangement and
+    sponsorship from that text, scores it against your verified profile, and
+    (by default) drafts a full application that lands in your review queue.
+    """
+    from app.models.profile import CandidateProfile
+    from app.services import application_workflow as workflow
+    from app.services import matching, taxonomy
+    from app.services.locations import resolve_city, resolve_country
+    from app.services.normalizer import (
+        compute_dedupe_hash,
+        detect_sponsorship,
+        extract_requirements,
+        parse_salary,
+    )
+
+    now = datetime.now(UTC)
+    description = payload.description_text.strip()
+    blob = f"{payload.title}\n{payload.location_raw}\n{description}"
+    country = resolve_country(payload.location_raw) or resolve_country(description[:400])
+    salary_min, salary_max, currency, period = parse_salary(description)
+
+    job = Job(
+        connector_key="manual",
+        compliance_tier=ComplianceTier.MANUAL_ONLY.value,
+        submission_policy_default=SubmissionPolicy.REVIEW_REQUIRED.value,
+        external_id=f"manual:{uuid.uuid4()}",
+        source_url=payload.url,
+        apply_url=payload.url,
+        is_direct_employer=True,
+        title=payload.title.strip(),
+        title_normalized=normalize_title(payload.title),
+        company=payload.company.strip(),
+        company_normalized=normalize_company(payload.company),
+        description_text=description,
+        location_raw=payload.location_raw,
+        location_city=resolve_city(payload.location_raw),
+        location_country=country,
+        work_arrangement=taxonomy.infer_work_arrangement(payload.location_raw, description).value,
+        employment_type=taxonomy.infer_employment_type("", payload.title).value,
+        seniority=taxonomy.infer_seniority(payload.title, description).value,
+        salary_min=salary_min,
+        salary_max=salary_max,
+        salary_currency=currency,
+        salary_period=period,
+        posted_at=now,
+        first_seen_at=now,
+        last_seen_at=now,
+        extracted_skills=taxonomy.extract_skills(blob),
+        requirements=extract_requirements(description),
+        visa_sponsorship_mentioned=detect_sponsorship(description),
+        dedupe_hash=compute_dedupe_hash(payload.company, payload.title, country),
+        raw={"source": "quick_add"},
+    )
+    db.add(job)
+    db.flush()
+    audit.record(
+        db,
+        AuditAction.JOB_INGESTED,
+        user_id=user.id,
+        actor=user.email,
+        object_type="job",
+        object_id=str(job.id),
+        payload={"source": "quick_add"},
+    )
+
+    # Score just this job by letting the matcher pick up the one unscored row.
+    matching.score_for_user(db, user, notify=False)
+    match = db.execute(
+        select(JobMatch).where(JobMatch.user_id == user.id, JobMatch.job_id == job.id)
+    ).scalar_one_or_none()
+
+    result = QuickAddOut(
+        job_id=job.id,
+        title=job.title,
+        company=job.company,
+        score=match.score if match else None,
+        decision=match.decision if match else None,
+        matching_skills=match.matching_skills if match else [],
+        message="Added and scored.",
+    )
+
+    if not payload.draft:
+        return result
+
+    profile = db.execute(
+        select(CandidateProfile).where(CandidateProfile.user_id == user.id)
+    ).scalar_one_or_none()
+    if profile is None:
+        result.message = "Added and scored. Create your profile before drafting an application."
+        return result
+
+    drafted = workflow.draft_application(db, user, job, match)
+    application = drafted.application
+    result.application_id = application.id
+    result.application_status = application.status
+    result.review_task_id = drafted.review_task.id if drafted.review_task else None
+    result.message = (
+        "Added, scored and drafted. Your tailored resume, cover letter and answers are ready "
+        "in the review queue."
+    )
+    return result
 
 
 # ------------------------------------------------------------------ companies

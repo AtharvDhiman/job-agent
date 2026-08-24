@@ -13,6 +13,7 @@ import {
   salaryText,
   useAsync,
 } from '@/components/ui'
+import { QuickAdd } from '@/components/QuickAdd'
 import { api } from '@/lib/api'
 import type { MatchWithJob, Page } from '@/lib/types'
 
@@ -96,6 +97,8 @@ function JobsList() {
           Every job the agent scored, with the reasoning behind the number.
         </p>
       </header>
+
+      <QuickAdd onAdded={reload} />
 
       <div className="card-tight grid gap-3 md:grid-cols-6">
         <input

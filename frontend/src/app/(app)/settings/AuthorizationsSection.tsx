@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useState } from 'react'
 
 import { Banner, ErrorNote, PolicyBadge, useAsync } from '@/components/ui'
@@ -141,11 +142,24 @@ export function AuthorizationsSection({ connectors }: { connectors: Connector[] 
               </div>
 
               {locked ? (
-                <p className="mt-2 text-xs text-bad">
-                  Automated applying on this platform is prohibited by its terms, so the app does
-                  not offer a control for it. Matched roles from here always become review tasks
-                  with a direct link that you open and submit yourself.
-                </p>
+                <div className="mt-2 rounded-md border border-slate-200 bg-surface-raised p-3">
+                  <p className="text-xs text-ink-soft">
+                    {connector.display_name.split(' (')[0]} forbids automated access in its terms,
+                    so this app never touches it programmatically - that protects your account from
+                    being banned. You can still apply to jobs you find there:
+                  </p>
+                  <ol className="mt-1.5 space-y-0.5 text-xs text-ink-soft">
+                    <li>1. Search on {connector.display_name.split(' (')[0]} yourself and open a job.</li>
+                    <li>2. Copy its link and the job description.</li>
+                    <li>
+                      3. Paste them into{' '}
+                      <Link href="/jobs" className="font-medium text-brand hover:underline">
+                        Apply to a job from any site
+                      </Link>{' '}
+                      - the agent drafts your whole application.
+                    </li>
+                  </ol>
+                </div>
               ) : null}
 
               {openKey === connector.key && !locked ? (

@@ -48,3 +48,8 @@ Thumbs.db
 .vscode/
 server.log
 server.err.log
+
+# local dev launchers (machine-specific, dev DB)
+run-backend.bat
+run-frontend.bat
+START-APP.bat

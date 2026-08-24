@@ -99,6 +99,19 @@ export interface Company {
   applied_count: number
 }
 
+export interface QuickAddResult {
+  job_id: string
+  title: string
+  company: string
+  score: number | null
+  decision: string | null
+  matching_skills: string[]
+  application_id: string | null
+  application_status: string | null
+  review_task_id: string | null
+  message: string
+}
+
 export interface Page<T> {
   items: T[]
   total: number

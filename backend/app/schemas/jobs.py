@@ -39,6 +39,38 @@ class SubscriptionOut(ORMModel):
     created_at: datetime
 
 
+class QuickAddIn(BaseModel):
+    """Add a job you found anywhere (LinkedIn, Indeed, any site) by pasting it.
+
+    You paste the link, the company, the title and the job description text you
+    are already looking at. The agent extracts skills, salary, seniority, work
+    arrangement and sponsorship from that text itself, then scores and drafts.
+
+    Nothing is fetched from the URL: you supply the text, so this works for sites
+    that forbid automated access without ever touching them programmatically.
+    """
+
+    url: str = Field(max_length=1000)
+    company: str = Field(min_length=1, max_length=300)
+    title: str = Field(min_length=1, max_length=400)
+    description_text: str = Field(min_length=1)
+    location_raw: str = Field(default="", max_length=400)
+    draft: bool = True
+
+
+class QuickAddOut(BaseModel):
+    job_id: uuid.UUID
+    title: str
+    company: str
+    score: int | None
+    decision: str | None
+    matching_skills: list[str] = Field(default_factory=list)
+    application_id: uuid.UUID | None = None
+    application_status: str | None = None
+    review_task_id: uuid.UUID | None = None
+    message: str
+
+
 class ManualJobIn(BaseModel):
     """Add a posting from a site that blocks automation. You supply the facts."""
 

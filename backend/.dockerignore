@@ -1,0 +1,40 @@
+# Keep the build context small and keep secrets out of the image.
+
+# local virtualenv (wrong platform, and huge)
+.venv/
+venv/
+
+# python caches
+__pycache__/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# tests never run inside the runtime image
+tests/
+
+# generated artifacts and uploads: mounted at runtime, never baked in
+storage/
+
+# local databases (scratch-dev.db and friends)
+*.db
+*.sqlite
+*.sqlite3
+
+# secrets: the container gets its configuration from env_file / env vars only
+.env
+.env.*
+!.env.example
+
+# coverage output
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+
+# misc
+Dockerfile
+.dockerignore
+*.log

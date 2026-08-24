@@ -1,0 +1,67 @@
+# =============================================================================
+#  Example systemd unit - Celery beat scheduler.
+#
+#  Beat only enqueues work on a schedule (discovery sweeps, the daily digest).
+#  Run exactly ONE beat process per deployment: two schedulers against the same
+#  broker will double every periodic task.
+#
+#  See jobagent-api.service for the install steps and env file permissions.
+# =============================================================================
+
+[Unit]
+Description=Job Agent Celery beat scheduler
+Documentation=file:///srv/jobagent/docs/COMPLIANCE.md
+After=network-online.target redis-server.service jobagent-api.service
+Wants=network-online.target
+PartOf=jobagent-api.service
+
+[Service]
+Type=exec
+User=jobagent
+Group=jobagent
+
+WorkingDirectory=/srv/jobagent/backend
+EnvironmentFile=/etc/jobagent/jobagent.env
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+
+# --schedule keeps beat's own state file inside the writable storage tree,
+# because ProtectSystem=strict makes everything else read-only.
+ExecStart=/srv/jobagent/backend/.venv/bin/celery -A app.workers.celery_app beat --loglevel=INFO --schedule /srv/jobagent/backend/storage/celerybeat-schedule
+
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+KillSignal=SIGTERM
+
+# --- hardening -------------------------------------------------------------
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectProc=invisible
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RemoveIPC=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+ReadWritePaths=/srv/jobagent/backend/storage
+
+# --- logging ---------------------------------------------------------------
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=jobagent-beat
+
+[Install]
+WantedBy=multi-user.target

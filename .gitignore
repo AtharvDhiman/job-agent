@@ -1,0 +1,50 @@
+# secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+secrets/
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+dist/
+build/
+*.egg-info/
+
+# node
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+.turbo/
+
+# runtime artifacts
+storage/
+*.db
+*.sqlite
+*.sqlite3
+scratch-*/
+uploads/
+artifacts/
+playwright-report/
+test-results/
+browser-assistant/.auth/
+logs/
+*.log
+
+# os / editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+server.log
+server.err.log

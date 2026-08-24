@@ -1,0 +1,75 @@
+# =============================================================================
+#  Example systemd unit - FastAPI API.
+#
+#  Install:
+#     sudo useradd --system --home /srv/jobagent --shell /usr/sbin/nologin jobagent
+#     sudo install -d -o jobagent -g jobagent /srv/jobagent/backend/storage
+#     sudo install -m 0640 -o root -g jobagent .env /etc/jobagent/jobagent.env
+#     sudo cp infra/systemd/jobagent-*.service /etc/systemd/system/
+#     sudo systemctl daemon-reload
+#     sudo systemctl enable --now jobagent-api
+#
+#  The env file holds SECRET_KEY, ENCRYPTION_KEY, database credentials and the
+#  browser assistant token. Keep it 0640 root:jobagent, never world-readable,
+#  and never in the repository.
+# =============================================================================
+
+[Unit]
+Description=Job Agent API (FastAPI/uvicorn)
+Documentation=file:///srv/jobagent/docs/COMPLIANCE.md
+After=network-online.target postgresql.service redis-server.service
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=jobagent
+Group=jobagent
+
+WorkingDirectory=/srv/jobagent/backend
+EnvironmentFile=/etc/jobagent/jobagent.env
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+
+# Migrations run before the first request is served.
+ExecStartPre=/srv/jobagent/backend/.venv/bin/alembic upgrade head
+ExecStart=/srv/jobagent/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 2
+
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+KillSignal=SIGTERM
+
+# --- hardening -------------------------------------------------------------
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectProc=invisible
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RemoveIPC=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+# ProtectSystem=strict makes the whole filesystem read-only, so name the one
+# directory that must stay writable: generated resumes, cover letters, uploads.
+ReadWritePaths=/srv/jobagent/backend/storage
+
+# --- logging ---------------------------------------------------------------
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=jobagent-api
+
+[Install]
+WantedBy=multi-user.target

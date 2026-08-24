@@ -1,0 +1,70 @@
+# =============================================================================
+#  Example systemd unit - Celery worker.
+#
+#  Runs discovery sweeps, ranking, document generation and notification jobs.
+#  See jobagent-api.service for the install steps and the env file permissions.
+#
+#  This worker never submits an application on its own. Submission is
+#  review-first, and automated submission additionally requires an explicit
+#  typed per-platform grant that LinkedIn and Indeed can never receive. When a
+#  job is blocked or anything is uncertain, the task stops and files a review
+#  task with a direct link and the prefilled draft.
+# =============================================================================
+
+[Unit]
+Description=Job Agent Celery worker
+Documentation=file:///srv/jobagent/docs/COMPLIANCE.md
+After=network-online.target postgresql.service redis-server.service jobagent-api.service
+Wants=network-online.target
+PartOf=jobagent-api.service
+
+[Service]
+Type=exec
+User=jobagent
+Group=jobagent
+
+WorkingDirectory=/srv/jobagent/backend
+EnvironmentFile=/etc/jobagent/jobagent.env
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+
+ExecStart=/srv/jobagent/backend/.venv/bin/celery -A app.workers.celery_app worker --loglevel=INFO --concurrency=2
+
+Restart=always
+RestartSec=5
+# Let an in-flight task finish rather than killing it mid-write.
+TimeoutStopSec=120
+KillSignal=SIGTERM
+
+# --- hardening -------------------------------------------------------------
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectProc=invisible
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RemoveIPC=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+# Generated documents are written here.
+ReadWritePaths=/srv/jobagent/backend/storage
+
+# --- logging ---------------------------------------------------------------
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=jobagent-worker
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,1 @@
+Alembic migrations. Generate: alembic revision --autogenerate -m 'msg'; apply: alembic upgrade head

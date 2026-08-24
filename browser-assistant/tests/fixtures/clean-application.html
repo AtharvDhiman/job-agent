@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Apply - Senior Backend Engineer - Northwind Systems</title>
+  </head>
+  <body>
+    <h1>Senior Backend Engineer</h1>
+    <p>Northwind Systems - Remote (US)</p>
+
+    <!--
+      A plain ATS application form with no challenge, no login and no paywall.
+      Field naming is deliberately inconsistent so the locator strategies are
+      genuinely exercised: name=, id=, data-qa=, label text, placeholder and
+      aria-label each own at least one field.
+    -->
+    <form id="application" action="/submit" method="post">
+      <label for="first_name">First name *</label>
+      <input type="text" name="first_name" id="first_name" required />
+
+      <label for="last_name">Last name *</label>
+      <input type="text" name="last_name" id="last_name" required />
+
+      <!-- resolvable only by id, the name attribute differs -->
+      <label for="email">Email address *</label>
+      <input type="email" name="candidate_email_field" id="email" required />
+
+      <!-- resolvable only by data-qa -->
+      <label for="phone-input">Phone number</label>
+      <input type="tel" data-qa="phone" id="phone-input" />
+
+      <!-- resolvable only by its label text -->
+      <label for="loc">Current location (city)</label>
+      <input type="text" id="loc" />
+
+      <!-- resolvable only by placeholder -->
+      <input type="url" placeholder="linkedin" aria-label="LinkedIn profile" />
+
+      <!-- resolvable only by aria-label -->
+      <input type="url" aria-label="website" />
+
+      <label for="work_auth">Are you legally authorized to work in the job location? *</label>
+      <select name="work_auth" id="work_auth" required>
+        <option value="">Please select</option>
+        <option value="yes">Yes</option>
+        <option value="no">No</option>
+      </select>
+
+      <label for="sponsorship">Will you now or in the future require visa sponsorship? *</label>
+      <select name="sponsorship" id="sponsorship" required>
+        <option value="">Please select</option>
+        <option value="Yes">Yes</option>
+        <option value="No">No</option>
+      </select>
+
+      <label for="relocate">Are you willing to relocate?</label>
+      <input type="checkbox" name="relocate" id="relocate" />
+
+      <label for="resume">Resume *</label>
+      <input type="file" name="resume" id="resume" required />
+
+      <label for="why">Why do you want to work here?</label>
+      <textarea name="why" id="why" rows="5"></textarea>
+
+      <fieldset>
+        <legend>Voluntary self-identification</legend>
+        <label for="gender">Gender</label>
+        <select name="gender" id="gender">
+          <option value="">Please select</option>
+          <option value="Male">Male</option>
+          <option value="Female">Female</option>
+          <option value="I prefer not to say">I prefer not to say</option>
+        </select>
+      </fieldset>
+
+      <button type="submit" id="submit-application">Submit application</button>
+    </form>
+  </body>
+</html>

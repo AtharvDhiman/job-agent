@@ -1,0 +1,27 @@
+# Keep the build context small and keep secrets out of the image.
+
+node_modules/
+.next/
+out/
+build/
+dist/
+
+# secrets: the container is configured through env vars only
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# tooling / editor noise
+*.tsbuildinfo
+.turbo/
+coverage/
+.eslintcache
+npm-debug.log*
+*.log
+
+.git/
+.gitignore
+Dockerfile
+.dockerignore
+README.md

@@ -1,0 +1,157 @@
+# =============================================================================
+#  AI Job Application Agent - local / single-host stack
+#
+#  Quick start:
+#     cp .env.example .env      (then: make secrets, and paste the values in)
+#     docker compose up --build
+#
+#  Services: postgres, redis, api, worker, beat, web.
+#
+#  ---------------------------------------------------------------------------
+#  DELIBERATELY NOT A SERVICE: the browser assistant.
+#  ---------------------------------------------------------------------------
+#  browser-assistant/ is never containerised and never run here. It is a HEADED
+#  browser session that runs on the user's own machine, under the user's own
+#  logged-in profile, with the user watching it. That is the whole point:
+#
+#    * It only ever fills a form that a human is about to review. Submission is
+#      review-first, and automated submission requires an explicit typed
+#      per-platform grant. LinkedIn and Indeed can never be granted.
+#    * It does not defeat CAPTCHAs, bot detection, logins, paywalls or any
+#      platform rule. When it hits one of those, or when anything is uncertain,
+#      it stops and files a review task with a direct link and the prefilled
+#      draft for the human to finish.
+#    * Running it headless in a datacentre container would turn a supervised
+#      assistant into exactly the kind of unattended scraper the product rules
+#      forbid, and would strip away the human who is meant to be watching.
+#
+#  Run it with `make assistant` on your own desktop instead. It reaches the API
+#  over BROWSER_ASSISTANT_TOKEN, so it works fine against this stack.
+# =============================================================================
+
+x-backend-build: &backend-build
+  context: ./backend
+  dockerfile: Dockerfile
+
+# Overrides applied on top of env_file (.env). These point the app at the
+# compose service hostnames instead of localhost. Every key here already exists
+# in .env.example / backend/app/core/config.py.
+x-backend-env: &backend-env
+  DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-jobagent}:${POSTGRES_PASSWORD:-jobagent}@postgres:5432/${POSTGRES_DB:-jobagent}
+  REDIS_URL: redis://redis:6379/0
+  CELERY_BROKER_URL: redis://redis:6379/1
+  CELERY_RESULT_BACKEND: redis://redis:6379/2
+  # Absolute, so it does not depend on where the source tree sits in the image.
+  STORAGE_LOCAL_PATH: /app/storage
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-jobagent}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-jobagent}
+      POSTGRES_DB: ${POSTGRES_DB:-jobagent}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-jobagent} -d ${POSTGRES_DB:-jobagent}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    # Not published by default: nothing outside the compose network needs it.
+    # Uncomment for a local psql session.
+    # ports:
+    #   - "5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  api:
+    build: *backend-build
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      <<: *backend-env
+    # Apply migrations, then hand PID 1 to uvicorn so signals are delivered.
+    command: sh -c "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    ports:
+      - "8000:8000"
+    volumes:
+      # Generated resumes, cover letters and uploads survive a rebuild.
+      - ./backend/storage:/app/storage
+
+  worker:
+    build: *backend-build
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_started
+    env_file:
+      - .env
+    environment:
+      <<: *backend-env
+    command: celery -A app.workers.celery_app worker --loglevel=INFO --concurrency=2
+    volumes:
+      - ./backend/storage:/app/storage
+
+  beat:
+    build: *backend-build
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_started
+    env_file:
+      - .env
+    environment:
+      <<: *backend-env
+    command: celery -A app.workers.celery_app beat --loglevel=INFO
+    volumes:
+      - ./backend/storage:/app/storage
+
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000/api/v1}
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      # Server-side only. Route handlers and the proxy call the API over the
+      # compose network; the browser never talks to the API directly, which is
+      # what keeps the session cookies httpOnly and same-origin.
+      API_INTERNAL_URL: http://api:8000/api/v1
+    ports:
+      - "3000:3000"
+
+volumes:
+  postgres_data:
+  redis_data:

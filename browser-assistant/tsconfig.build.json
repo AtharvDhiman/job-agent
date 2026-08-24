@@ -1,0 +1,10 @@
+{
+  // Build config. Extends the main tsconfig but drops the test files and their
+  // fixtures, so `npm run build` emits only what the assistant needs at runtime
+  // and dist/ never carries vitest or playwright test code.
+  //
+  // `npm run typecheck` deliberately uses the base tsconfig instead, so the
+  // tests are still fully type-checked.
+  "extends": "./tsconfig.json",
+  "exclude": ["dist", "node_modules", "**/*.test.ts", "tests"]
+}

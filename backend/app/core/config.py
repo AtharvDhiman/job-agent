@@ -10,7 +10,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, ValidationInfo, field_validator
+from pydantic import Field, ValidationInfo, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -23,6 +23,31 @@ class Settings(BaseSettings):
         extra="ignore",
         case_sensitive=False,
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _blank_env_means_default(cls, data):
+        """Treat an empty-string env var as "unset" so the default applies.
+
+        Hosts like Vercel and other dashboards inject a variable as "" when its
+        box is left blank, rather than not setting it at all. Pydantic then tries
+        to parse "" as an int/float/bool for the typed fields and the whole
+        process exits on startup (the crash that produced the Vercel 500s). For a
+        non-string field a blank value carries no information, so we drop it and
+        let the field default stand.
+        """
+        if not isinstance(data, dict):
+            return data
+        string_fields = {
+            name for name, field in cls.model_fields.items() if field.annotation is str
+        }
+        return {
+            key: value
+            for key, value in data.items()
+            # keep blanks only for genuine string fields (an empty string is a
+            # valid value there); drop them everywhere else.
+            if not (isinstance(value, str) and value == "" and key.lower() not in string_fields)
+        }
 
     # --- core -------------------------------------------------------------
     app_env: Literal["development", "test", "staging", "production"] = "development"

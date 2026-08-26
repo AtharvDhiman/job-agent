@@ -29,6 +29,7 @@ class SmartRecruitersConnector(BaseConnector):
     display_name = "SmartRecruiters"
     compliance_tier = ComplianceTier.PUBLIC_JOB_API
     submission_policy_default = SubmissionPolicy.REVIEW_REQUIRED
+    browser_submission_supported = True
     policy_note = (
         "Public Posting API. Applications are always queued for your review unless "
         "you authorize the platform; the write API requires a partner agreement."

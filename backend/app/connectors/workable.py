@@ -26,6 +26,7 @@ class WorkableConnector(BaseConnector):
     display_name = "Workable"
     compliance_tier = ComplianceTier.PUBLIC_JOB_API
     submission_policy_default = SubmissionPolicy.REVIEW_REQUIRED
+    browser_submission_supported = True
     policy_note = (
         "Public account widget API used to embed a company's board. "
         "Applications are queued for review unless you authorize the platform."

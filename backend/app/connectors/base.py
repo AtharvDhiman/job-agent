@@ -82,6 +82,9 @@ class BaseConnector(abc.ABC):
     #: Identifier the user supplies, e.g. "Greenhouse board token".
     identifier_label: ClassVar[str] = "identifier"
     identifier_help: ClassVar[str] = ""
+    #: Whether the visible local browser assistant may be used for this ATS.
+    #: Discovery alone never implies that a form is safe or supported to fill.
+    browser_submission_supported: ClassVar[bool] = False
 
     def __init__(self, http, *, settings=None):
         self.http = http
@@ -113,8 +116,12 @@ class BaseConnector(abc.ABC):
             "compliance_tier": cls.compliance_tier.value,
             "submission_policy_default": cls.submission_policy_default.value,
             "automation_permitted_for_discovery": cls.permits_automated_discovery(),
-            "automation_permitted_for_submission": cls.submission_policy_default
-            != SubmissionPolicy.PROHIBITED,
+            #: The two independent reasons submission can be off, kept separate so
+            #: the UI can tell "their terms forbid it" from "we have not built it".
+            #: Collapsing them into one boolean makes the UI claim the wrong one.
+            "browser_submission_supported": cls.browser_submission_supported,
+            "automation_permitted_for_submission": cls.browser_submission_supported
+            and cls.submission_policy_default != SubmissionPolicy.PROHIBITED,
             "requires_user_review_by_default": cls.submission_policy_default
             in (SubmissionPolicy.REVIEW_REQUIRED, SubmissionPolicy.PROHIBITED),
             "policy_note": cls.policy_note,
@@ -164,6 +171,16 @@ class ConnectorRegistry:
                 "applying. It must declare submission_policy_default = PROHIBITED "
                 "(docs/COMPLIANCE.md section 2)."
             )
+        if cls.browser_submission_supported and (
+            key in HARD_PROHIBITED_KEYS
+            or cls.submission_policy_default is SubmissionPolicy.PROHIBITED
+        ):
+            raise TypeError(
+                f"{cls.__name__} declares browser_submission_supported = True while being "
+                "prohibited for automated submission. A prohibited platform must never "
+                "expose a browser workflow, not even a review-only one "
+                "(docs/COMPLIANCE.md section 2)."
+            )
         if key in self._connectors:
             raise ValueError(f"Duplicate connector key: {cls.key}")
         self._connectors[key] = cls
@@ -189,6 +206,20 @@ class ConnectorRegistry:
 
     def keys(self) -> list[str]:
         return sorted(self._connectors)
+
+    def browser_submission_keys(self) -> list[str]:
+        """Connector keys with an explicitly supported browser application flow.
+
+        The canonical answer in Python. The browser assistant keeps its own
+        hard-coded copy (it must fail closed without asking the server), and the
+        test suite asserts the two agree.
+        """
+        return sorted(
+            key
+            for key, cls in self._connectors.items()
+            if cls.browser_submission_supported
+            and cls.submission_policy_default is not SubmissionPolicy.PROHIBITED
+        )
 
 
 registry = ConnectorRegistry()

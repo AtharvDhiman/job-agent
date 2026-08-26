@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  BROWSER_SUPPORTED_CONNECTORS,
   CAPTCHA_SELECTORS,
   CAPTCHA_TEXT_MARKERS,
   LOGIN_SELECTORS,
@@ -204,6 +205,54 @@ describe('platforms this assistant never automates', () => {
   it('allows an ordinary board', () => {
     expect(connectorIsProhibited('greenhouse')).toBe(false);
     expect(taskIsAllowed(base).allowed).toBe(true);
+  });
+});
+
+describe('platforms this assistant knows how to drive', () => {
+  const base = { connector_key: 'greenhouse', apply_url: 'https://boards.greenhouse.io/x/jobs/1', mode: 'auto_submit', may_click_submit: true };
+
+  it('mirrors the registry allow-list in the backend', () => {
+    // registry.browser_submission_keys() in backend/app/connectors/base.py.
+    // backend/tests/unit/test_compliance.py parses this array and asserts they match.
+    expect([...BROWSER_SUPPORTED_CONNECTORS].sort()).toEqual([
+      'ashby',
+      'greenhouse',
+      'lever',
+      'smartrecruiters',
+      'workable',
+    ]);
+  });
+
+  it.each(['greenhouse', 'lever', 'ashby', 'workable', 'smartrecruiters'])('allows %s', (key) => {
+    const verdict = taskIsAllowed({ ...base, connector_key: key, apply_url: 'https://jobs.example.com/apply/1' });
+    expect(verdict.allowed).toBe(true);
+    expect(verdict.reason).toContain('allow-list');
+  });
+
+  it.each(['adzuna', 'rss', 'careers_page', 'manual', 'wellfound', ''])(
+    'refuses discovery-only connector %s',
+    (key) => {
+      const verdict = taskIsAllowed({ ...base, connector_key: key, apply_url: 'https://jobs.example.com/apply/1' });
+      expect(verdict.allowed).toBe(false);
+      expect(verdict.reason).toContain('discovery and review only');
+    },
+  );
+
+  it('refuses an unsupported connector even when the server authorized the click', () => {
+    // A widened allow-list on the server must not widen this process.
+    expect(
+      mayClickSubmit({ ...base, connector_key: 'rss', may_click_submit: true, mode: 'auto_submit' }),
+    ).toBe(false);
+  });
+
+  it.each(['GreenHouse', ' lever ', 'ASHBY'])('matches %s case-insensitively', (key) => {
+    expect(taskIsAllowed({ ...base, connector_key: key, apply_url: 'https://jobs.example.com/apply/1' }).allowed).toBe(true);
+  });
+
+  it('never contains a prohibited platform', () => {
+    for (const key of PROHIBITED_CONNECTORS) {
+      expect(BROWSER_SUPPORTED_CONNECTORS).not.toContain(key);
+    }
   });
 });
 

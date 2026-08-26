@@ -44,6 +44,7 @@ class ConnectorInfo(BaseModel):
     compliance_tier: str
     submission_policy_default: str
     automation_permitted_for_discovery: bool
+    browser_submission_supported: bool
     automation_permitted_for_submission: bool
     requires_user_review_by_default: bool
     policy_note: str

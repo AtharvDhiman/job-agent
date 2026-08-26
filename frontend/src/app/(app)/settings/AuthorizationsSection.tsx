@@ -13,6 +13,14 @@ interface Acknowledgement {
   never_automatable: string[]
 }
 
+/** "Greenhouse (job boards)" -> "Greenhouse". */
+function shortName(connector: Connector): string {
+  return connector.display_name.split(' (')[0] ?? connector.display_name
+}
+
+const sentenceList = (names: string[]) =>
+  new Intl.ListFormat('en', { style: 'long', type: 'conjunction' }).format(names)
+
 export function AuthorizationsSection({ connectors }: { connectors: Connector[] }) {
   const { data: grants, error, reload } = useAsync<Authorization[]>(
     () => api.get<Authorization[]>('/settings/authorizations'),
@@ -32,6 +40,12 @@ export function AuthorizationsSection({ connectors }: { connectors: Connector[] 
   const grantFor = (key: string) => grants?.find((g) => g.platform_key === key)
   const phrase = ack?.acknowledgement ?? ''
   const matches = phrase.length > 0 && typed.trim() === phrase
+
+  // Derived from the API, never hardcoded: the backend registry is the only
+  // place that decides which platforms have a supported browser workflow.
+  const supportedNames = connectors
+    .filter((c) => c.automation_permitted_for_submission)
+    .map((c) => shortName(c))
 
   function openForm(key: string) {
     setOpenKey(openKey === key ? null : key)
@@ -81,9 +95,13 @@ export function AuthorizationsSection({ connectors }: { connectors: Connector[] 
       <div>
         <h2 className="text-sm font-semibold text-ink">Platform automation authorizations</h2>
         <p className="mt-1 text-xs text-ink-muted">
-          Every platform starts at review-only. Granting automation is a deliberate, per-platform
-          act that you can revoke at any time, and it is ignored entirely while automation is
-          paused.
+          {supportedNames.length > 0
+            ? `${sentenceList(supportedNames)} can use the visible local browser workflow after your
+               explicit authorization. Every other source stays discovery-and-review only: it is
+               still searched, ranked and drafted for you, but you submit it yourself. You can
+               revoke any authorization at any time.`
+            : `No platform in this build has a supported browser workflow, so every source is
+               discovery-and-review only.`}
         </p>
       </div>
 
@@ -94,7 +112,13 @@ export function AuthorizationsSection({ connectors }: { connectors: Connector[] 
       <div className="space-y-3">
         {connectors.map((connector) => {
           const active = grantFor(connector.key)
-          const locked = !connector.automation_permitted_for_submission
+          // Two independent reasons automation is unavailable, and the user is
+          // owed the right one. "Their terms forbid it" is permanent and is
+          // about them; "no supported workflow" is about this app.
+          const prohibited = connector.submission_policy_default === 'prohibited'
+          const unsupported = !prohibited && !connector.browser_submission_supported
+          const locked = prohibited || unsupported
+          const name = shortName(connector)
 
           return (
             <div key={connector.key} className="rounded-md border border-slate-200 p-4">
@@ -118,8 +142,12 @@ export function AuthorizationsSection({ connectors }: { connectors: Connector[] 
                 </div>
 
                 <div className="shrink-0">
-                  {locked ? (
-                    <span className="chip bg-bad-soft text-bad">Cannot be enabled</span>
+                  {prohibited ? (
+                    <span className="chip bg-bad-soft text-bad">Blocked by their terms</span>
+                  ) : unsupported ? (
+                    <span className="chip bg-slate-100 text-ink-muted">
+                      Discovery and review only
+                    </span>
                   ) : active?.is_active ? (
                     <button
                       type="button"
@@ -141,15 +169,15 @@ export function AuthorizationsSection({ connectors }: { connectors: Connector[] 
                 </div>
               </div>
 
-              {locked ? (
+              {prohibited ? (
                 <div className="mt-2 rounded-md border border-slate-200 bg-surface-raised p-3">
                   <p className="text-xs text-ink-soft">
-                    {connector.display_name.split(' (')[0]} forbids automated access in its terms,
-                    so this app never touches it programmatically - that protects your account from
-                    being banned. You can still apply to jobs you find there:
+                    {name} forbids automated access in its terms, so this app never touches it
+                    programmatically - that protects your account from being banned. You can still
+                    apply to jobs you find there:
                   </p>
                   <ol className="mt-1.5 space-y-0.5 text-xs text-ink-soft">
-                    <li>1. Search on {connector.display_name.split(' (')[0]} yourself and open a job.</li>
+                    <li>1. Search on {name} yourself and open a job.</li>
                     <li>2. Copy its link and the job description.</li>
                     <li>
                       3. Paste them into{' '}
@@ -158,6 +186,26 @@ export function AuthorizationsSection({ connectors }: { connectors: Connector[] 
                       </Link>{' '}
                       - the agent drafts your whole application.
                     </li>
+                  </ol>
+                </div>
+              ) : unsupported ? (
+                <div className="mt-2 rounded-md border border-slate-200 bg-surface-raised p-3">
+                  <p className="text-xs text-ink-soft">
+                    Nothing here is off limits - this app simply has no browser workflow for {name}
+                    application forms, so it will not open one. {name} jobs are still discovered,
+                    ranked, and drafted for you, and each match becomes a review task with a direct
+                    link:
+                  </p>
+                  <ol className="mt-1.5 space-y-0.5 text-xs text-ink-soft">
+                    <li>
+                      1. Open the match from{' '}
+                      <Link href="/reviews" className="font-medium text-brand hover:underline">
+                        Needs review
+                      </Link>
+                      .
+                    </li>
+                    <li>2. Copy the resume, cover letter and answers the agent prepared.</li>
+                    <li>3. Submit it yourself on the employer&apos;s site.</li>
                   </ol>
                 </div>
               ) : null}

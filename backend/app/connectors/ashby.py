@@ -26,6 +26,7 @@ class AshbyConnector(BaseConnector):
     display_name = "Ashby"
     compliance_tier = ComplianceTier.PUBLIC_JOB_API
     submission_policy_default = SubmissionPolicy.REVIEW_REQUIRED
+    browser_submission_supported = True
     policy_note = (
         "Public posting API published by Ashby for embedding company boards. "
         "Submission is queued for review unless you authorize the platform."

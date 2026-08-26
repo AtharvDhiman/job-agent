@@ -146,6 +146,12 @@ def grant_authorization(
             status.HTTP_403_FORBIDDEN,
             f"{connector.display_name} is registered as prohibited for automated submission.",
         )
+    if not connector.browser_submission_supported:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            f"{connector.display_name} is discovery and review only; it has no supported "
+            "browser auto-submit workflow.",
+        )
 
     row = db.execute(
         select(PlatformAuthorization).where(

@@ -17,6 +17,8 @@ export interface Connector {
   compliance_tier: ComplianceTier
   submission_policy_default: SubmissionPolicy
   automation_permitted_for_discovery: boolean
+  /** True when this ATS has a browser application workflow this app knows how to drive. */
+  browser_submission_supported: boolean
   automation_permitted_for_submission: boolean
   requires_user_review_by_default: boolean
   policy_note: string

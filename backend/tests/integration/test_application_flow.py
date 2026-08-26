@@ -149,6 +149,41 @@ def test_review_only_policy_is_rejected_by_the_grant_endpoint(client, auth_heade
     assert response.status_code == 422
 
 
+@pytest.mark.parametrize("platform", ["adzuna", "careers_page", "manual", "rss"])
+def test_discovery_only_platforms_cannot_be_authorized_for_submission(
+    client, auth_headers, platform
+):
+    """These connectors read jobs happily; none of them has a form we can drive."""
+    response = client.post(
+        "/api/v1/settings/authorizations",
+        headers=auth_headers,
+        json={
+            "platform_key": platform,
+            "policy": "auto_submit",
+            "acknowledgement": AUTHORIZATION_ACKNOWLEDGEMENT,
+        },
+    )
+    assert response.status_code == 403, response.text
+    assert "discovery and review only" in response.text
+
+
+@pytest.mark.parametrize(
+    "platform", ["greenhouse", "lever", "ashby", "workable", "smartrecruiters"]
+)
+def test_every_supported_platform_can_be_authorized(client, auth_headers, platform):
+    response = client.post(
+        "/api/v1/settings/authorizations",
+        headers=auth_headers,
+        json={
+            "platform_key": platform,
+            "policy": "auto_submit",
+            "acknowledgement": AUTHORIZATION_ACKNOWLEDGEMENT,
+        },
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["is_active"] is True
+
+
 def test_pause_is_instant_and_audited(client, auth_headers):
     paused = client.post(
         "/api/v1/settings/pause", headers=auth_headers, json={"reason": "stop everything"}

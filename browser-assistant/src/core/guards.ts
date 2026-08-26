@@ -59,6 +59,19 @@ export const NEVER_DO: string[] = [
  */
 export const PROHIBITED_CONNECTORS: readonly string[] = ['linkedin', 'indeed'];
 
+/**
+ * The browser assistant is deliberately allow-listed. Other connectors can
+ * still discover jobs and create review tasks, but a new source must not gain
+ * browser access simply because it is not on the prohibited list.
+ */
+export const BROWSER_SUPPORTED_CONNECTORS: readonly string[] = [
+  'greenhouse',
+  'lever',
+  'ashby',
+  'workable',
+  'smartrecruiters',
+];
+
 /** Hostnames that belong to those platforms, checked against the apply URL. */
 const PROHIBITED_HOST_PATTERN = /(^|\.)(linkedin\.com|indeed\.com|indeed\.[a-z.]{2,6})$/iu;
 
@@ -101,7 +114,13 @@ export function taskIsAllowed(task: TaskLike): { allowed: boolean; reason: strin
       reason: `${task.apply_url} is on a platform whose terms forbid automated applying. Apply to it yourself.`,
     };
   }
-  return { allowed: true, reason: 'Platform is not on the never-automate list.' };
+  if (!BROWSER_SUPPORTED_CONNECTORS.includes((task.connector_key ?? '').trim().toLowerCase())) {
+    return {
+      allowed: false,
+      reason: `${task.connector_key} is discovery and review only; it has no supported browser application workflow.`,
+    };
+  }
+  return { allowed: true, reason: 'Platform is on the supported browser-workflow allow-list.' };
 }
 
 /**

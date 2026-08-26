@@ -27,6 +27,7 @@ class LeverConnector(BaseConnector):
     display_name = "Lever"
     compliance_tier = ComplianceTier.PUBLIC_JOB_API
     submission_policy_default = SubmissionPolicy.REVIEW_REQUIRED
+    browser_submission_supported = True
     policy_note = (
         "Documented public postings feed. Submission requires your explicit "
         "per-platform authorization; otherwise every application is queued for review."

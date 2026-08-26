@@ -2,12 +2,20 @@
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
+
 import pytest
 
 from app.connectors import registry
 from app.connectors.base import BaseConnector, ConnectorRegistry
 from app.connectors.http import PoliteClient
 from app.core.enums import ComplianceTier, SubmissionPolicy
+
+#: The only platforms whose application forms this project knows how to drive.
+#: Written out literally so widening it is a deliberate, reviewable edit here as
+#: well as in the connector, the registry and the browser assistant.
+EXPECTED_BROWSER_SUPPORTED = {"greenhouse", "lever", "ashby", "workable", "smartrecruiters"}
 
 
 def test_every_connector_declares_a_compliance_tier():
@@ -114,6 +122,92 @@ def test_the_registry_and_the_policy_layer_prohibit_the_same_platforms():
     from app.services.policy import HARD_PROHIBITED_PLATFORMS
 
     assert HARD_PROHIBITED_KEYS == HARD_PROHIBITED_PLATFORMS
+
+
+# --------------------------------------------------------------------------
+# Browser submission is an allow-list, not "anything not prohibited"
+# --------------------------------------------------------------------------
+def test_only_the_five_supported_ats_platforms_may_be_driven_by_the_browser():
+    assert set(registry.browser_submission_keys()) == EXPECTED_BROWSER_SUPPORTED
+
+
+def test_discovery_only_connectors_do_not_claim_a_browser_workflow():
+    """A public jobs feed is grounds for discovery, never for filling a form."""
+    for connector in registry.all():
+        if connector.key in EXPECTED_BROWSER_SUPPORTED:
+            continue
+        assert connector.browser_submission_supported is False, connector.key
+        assert connector.describe()["automation_permitted_for_submission"] is False, connector.key
+
+
+def test_every_browser_supported_connector_still_requires_an_explicit_grant():
+    """Supporting a form is not the same as being allowed to submit one."""
+    for key in sorted(EXPECTED_BROWSER_SUPPORTED):
+        connector = registry.get(key)
+        assert connector.submission_policy_default is SubmissionPolicy.REVIEW_REQUIRED, key
+        assert connector.describe()["requires_user_review_by_default"] is True, key
+
+
+def test_the_registry_refuses_a_prohibited_connector_that_claims_a_browser_workflow():
+    """Opening and typing into a page is automation even if submit is never clicked."""
+    local = ConnectorRegistry()
+
+    class Overreaching(BaseConnector):
+        key = "indeed"
+        display_name = "Indeed but drivable"
+        compliance_tier = ComplianceTier.PARTNER_API
+        submission_policy_default = SubmissionPolicy.PROHIBITED
+        policy_note = "nope"
+        browser_submission_supported = True
+
+        def fetch(self, spec, *, etag=""):
+            return None
+
+    with pytest.raises(TypeError, match="browser_submission_supported"):
+        local.register(Overreaching)
+
+
+# --------------------------------------------------------------------------
+# The browser assistant holds its own copy of both lists. It has to: it is the
+# process that actually opens somebody's site, so it must fail closed without
+# asking the server. These tests are what stop the copies drifting apart.
+# --------------------------------------------------------------------------
+GUARDS_TS = Path(__file__).resolve().parents[3] / "browser-assistant" / "src" / "core" / "guards.ts"
+
+
+def _ts_string_array(name: str) -> set[str]:
+    """Read an `export const NAME: readonly string[] = [...]` literal out of TypeScript.
+
+    A parse failure fails the test rather than returning an empty set. Comparing
+    nothing against nothing would silently pass and hide the exact drift this
+    test exists to catch.
+    """
+    assert GUARDS_TS.is_file(), f"Expected the browser assistant guard file at {GUARDS_TS}"
+    source = GUARDS_TS.read_text(encoding="utf-8")
+    match = re.search(
+        rf"export const {re.escape(name)}\s*:\s*readonly string\[\]\s*=\s*\[([^\]]*)\]",
+        source,
+    )
+    assert match is not None, (
+        f"Could not find `export const {name}: readonly string[] = [...]` in {GUARDS_TS.name}. "
+        "If the declaration moved or changed shape, fix this parser -- do not delete the test."
+    )
+    items = re.findall(r"""['"]([^'"]+)['"]""", match.group(1))
+    assert items, f"{name} in {GUARDS_TS.name} parsed as empty"
+    return {item.strip().lower() for item in items}
+
+
+def test_the_browser_assistant_prohibits_exactly_what_the_registry_prohibits():
+    from app.connectors.base import HARD_PROHIBITED_KEYS
+
+    assert _ts_string_array("PROHIBITED_CONNECTORS") == set(HARD_PROHIBITED_KEYS)
+
+
+def test_the_browser_assistant_allow_list_matches_the_registry():
+    """Adding a connector in Python must not silently grant it browser access."""
+    assert _ts_string_array("BROWSER_SUPPORTED_CONNECTORS") == set(
+        registry.browser_submission_keys()
+    )
 
 
 @pytest.mark.parametrize("spelling", ["LinkedIn", " indeed ", "GREENHOUSE"])

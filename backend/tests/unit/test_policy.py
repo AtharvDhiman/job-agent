@@ -183,6 +183,77 @@ def test_prohibited_platform_keys_are_matched_case_insensitively(spelling):
 
 
 # --------------------------------------------------------------------------
+# Discovery is not permission to fill a form.
+#
+# These connectors are registered, allowed to read jobs, and not prohibited --
+# they simply have no browser workflow. They must land in review, and no grant,
+# score or approval may talk them out of it.
+# --------------------------------------------------------------------------
+DISCOVERY_ONLY = ["adzuna", "careers_page", "manual", "rss"]
+
+
+@pytest.mark.parametrize("platform", DISCOVERY_ONLY)
+def test_a_discovery_only_platform_is_never_auto_submitted(platform):
+    decision = decide(
+        job=make_job(connector_key=platform),
+        authorization=grant(platform, SubmissionPolicy.AUTO_SUBMIT),
+        score=100,
+    )
+    assert decision.policy == SubmissionPolicy.REVIEW_REQUIRED.value
+    assert decision.may_submit is False
+    assert decision.may_autofill is False
+    assert decision.review_reasons == [ReviewReason.UNSUPPORTED_PLATFORM.value]
+    assert any("discover" in line for line in decision.rationale)
+
+
+@pytest.mark.parametrize("platform", DISCOVERY_ONLY)
+def test_an_approval_cannot_unlock_a_discovery_only_platform(platform):
+    """The review task is the whole point: you apply on the site yourself."""
+    decision = decide(
+        job=make_job(connector_key=platform),
+        authorization=grant(platform, SubmissionPolicy.AUTO_SUBMIT),
+        score=100,
+    )
+    assert policy.may_hand_out(decision, approved_by_human=True) is False
+    assert policy.may_hand_out(decision, approved_by_human=False) is False
+
+
+@pytest.mark.parametrize(
+    "platform", ["greenhouse", "lever", "ashby", "workable", "smartrecruiters"]
+)
+def test_every_supported_platform_can_reach_auto_submit_when_fully_authorized(platform):
+    """The other half of the contract: the allow-list is not empty in practice."""
+    decision = decide(
+        job=make_job(connector_key=platform),
+        authorization=grant(platform, SubmissionPolicy.AUTO_SUBMIT),
+        score=95,
+    )
+    assert decision.policy == SubmissionPolicy.AUTO_SUBMIT.value
+    assert decision.may_submit is True
+
+
+def test_unsupported_platform_is_checked_before_authorization():
+    """An ungranted, unsupported platform reports the durable reason, not the fixable one.
+
+    'Grant automation in Settings' would be false advice here: there is nothing
+    to grant, and the grant endpoint refuses it.
+    """
+    decision = decide(job=make_job(connector_key="rss"), authorization=None)
+    assert decision.review_reasons == [ReviewReason.UNSUPPORTED_PLATFORM.value]
+    assert ReviewReason.PLATFORM_NOT_AUTHORIZED.value not in decision.review_reasons
+
+
+def test_supports_browser_submission_is_false_for_an_unregistered_key():
+    assert policy.registered_connector_supports_browser_submission("mystery_board") is False
+    assert policy.registered_connector_supports_browser_submission("") is False
+
+
+@pytest.mark.parametrize("spelling", ["GreenHouse", " greenhouse ", "SMARTRECRUITERS"])
+def test_browser_support_is_matched_case_insensitively(spelling):
+    assert policy.registered_connector_supports_browser_submission(spelling) is True
+
+
+# --------------------------------------------------------------------------
 # What a human approval may unlock at hand-out time.
 # --------------------------------------------------------------------------
 def test_may_hand_out_never_lifts_a_prohibited_platform():

@@ -72,6 +72,20 @@ def registered_connector_policy(connector_key: str) -> str:
     return connector.submission_policy_default.value
 
 
+def registered_connector_supports_browser_submission(connector_key: str) -> bool:
+    """Whether this connector has an explicitly supported browser workflow.
+
+    A public jobs feed is enough for discovery, not enough to let an automated
+    browser touch an application page.  New connectors therefore fail closed
+    until they opt in here through their contract declaration.
+    """
+    try:
+        connector = registry.get(normalize_platform_key(connector_key))
+    except Exception:
+        return False
+    return bool(connector.browser_submission_supported)
+
+
 def _strictest(*policies: str) -> str:
     return min(policies, key=lambda value: _STRICTNESS.get(value, 0))
 
@@ -137,6 +151,17 @@ def decide(
             rationale=[
                 f"{job.connector_key} prohibits automated applications. A review task with a "
                 "direct link is created instead; you apply yourself."
+            ],
+        )
+
+    if not registered_connector_supports_browser_submission(job.connector_key):
+        return PolicyDecision(
+            policy=SubmissionPolicy.REVIEW_REQUIRED.value,
+            review_reasons=[ReviewReason.UNSUPPORTED_PLATFORM.value],
+            rationale=[
+                f"{job.connector_key} can be used to discover jobs, but it does not have a "
+                "supported browser application workflow. A review task with a direct link is "
+                "created instead."
             ],
         )
 

@@ -29,6 +29,7 @@ class GreenhouseConnector(BaseConnector):
     display_name = "Greenhouse"
     compliance_tier = ComplianceTier.PUBLIC_JOB_API
     submission_policy_default = SubmissionPolicy.REVIEW_REQUIRED
+    browser_submission_supported = True
     policy_note = (
         "Public, documented job-board API intended for public consumption. "
         "Application submission stays in review until you explicitly authorize "

@@ -49,9 +49,7 @@ def upgrade() -> None:
     is_postgres = bind.dialect.name == "postgresql"
 
     if is_postgres:
-        op.execute(
-            "ALTER TABLE documents ALTER COLUMN parsed TYPE TEXT USING parsed::text"
-        )
+        op.execute("ALTER TABLE documents ALTER COLUMN parsed TYPE TEXT USING parsed::text")
         op.execute("ALTER TABLE documents ALTER COLUMN parsed DROP NOT NULL")
         op.execute("ALTER TABLE documents ALTER COLUMN extracted_text DROP NOT NULL")
         op.execute(AUDIT_TRUNCATE_TRIGGER)
@@ -70,6 +68,4 @@ def downgrade() -> None:
     if is_postgres:
         op.execute("DROP TRIGGER IF EXISTS audit_logs_no_truncate ON audit_logs")
         op.execute("DROP FUNCTION IF EXISTS jobagent_audit_no_truncate()")
-        op.execute(
-            "ALTER TABLE documents ALTER COLUMN parsed TYPE JSONB USING parsed::jsonb"
-        )
+        op.execute("ALTER TABLE documents ALTER COLUMN parsed TYPE JSONB USING parsed::jsonb")

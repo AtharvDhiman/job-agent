@@ -6,6 +6,7 @@ import type { Connector } from '@/lib/types'
 
 import { AuthorizationsSection } from './AuthorizationsSection'
 import { AutomationSection } from './AutomationSection'
+import { PortalsSection } from './PortalsSection'
 import { DataSection } from './DataSection'
 import { SourcesSection } from './SourcesSection'
 
@@ -29,6 +30,7 @@ export default function SettingsPage() {
       <ErrorNote message={error} />
       {connectors ? (
         <>
+          <PortalsSection />
           <SourcesSection connectors={connectors} />
           <AuthorizationsSection connectors={connectors} />
         </>

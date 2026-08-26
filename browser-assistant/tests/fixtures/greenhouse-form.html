@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Platform Engineer - Northwind Systems - Application</title>
+  </head>
+  <body>
+    <div id="main">
+      <h1 class="app-title">Platform Engineer</h1>
+      <div class="location">Remote - United States</div>
+
+      <!--
+        A Greenhouse-shaped application form: the `#application_form` wrapper,
+        the plainly named core inputs, a paste-or-upload document control, and a
+        couple of custom questions. No challenge widget, no account gate and no
+        third-party identity button, so checkFormSafety must call it safe.
+
+        Nothing in here may contain a marker from core/guards.ts. That is the
+        point of the fixture: a guard that stops on an ordinary application form
+        would turn the whole product into a manual review queue.
+      -->
+      <form
+        id="application_form"
+        action="https://boards.greenhouse.io/northwindsystems/jobs/4188245/applications"
+        method="post"
+        enctype="multipart/form-data"
+      >
+        <div class="field">
+          <label for="first_name">First Name <span class="asterisk">*</span></label>
+          <input type="text" id="first_name" name="first_name" autocomplete="given-name" required />
+        </div>
+
+        <div class="field">
+          <label for="last_name">Last Name <span class="asterisk">*</span></label>
+          <input type="text" id="last_name" name="last_name" autocomplete="family-name" required />
+        </div>
+
+        <div class="field">
+          <label for="email">Email <span class="asterisk">*</span></label>
+          <input type="email" id="email" name="email" autocomplete="email" required />
+        </div>
+
+        <div class="field">
+          <label for="phone">Phone</label>
+          <input type="tel" id="phone" name="phone" autocomplete="tel" />
+        </div>
+
+        <div class="field attachment">
+          <label for="resume">Resume/CV <span class="asterisk">*</span></label>
+          <input type="file" id="resume" name="resume" accept=".pdf,.doc,.docx,.txt,.rtf" required />
+          <div class="attach-or">or paste it below</div>
+          <textarea id="resume_text" name="resume_text" rows="6"></textarea>
+        </div>
+
+        <div class="field attachment">
+          <label for="cover_letter">Cover Letter</label>
+          <input type="file" id="cover_letter" name="cover_letter" accept=".pdf,.doc,.docx,.txt,.rtf" />
+        </div>
+
+        <div class="field custom-question">
+          <label for="linkedin_url">LinkedIn Profile</label>
+          <input
+            type="url"
+            id="linkedin_url"
+            name="job_application[answers_attributes][0][text_value]"
+          />
+        </div>
+
+        <div class="field custom-question">
+          <label for="work_auth">Are you legally authorized to work in the United States? <span class="asterisk">*</span></label>
+          <select id="work_auth" name="job_application[answers_attributes][1][boolean_value]" required>
+            <option value="">Please select</option>
+            <option value="1">Yes</option>
+            <option value="0">No</option>
+          </select>
+        </div>
+
+        <div class="field custom-question">
+          <label for="why_northwind">What interests you about this role?</label>
+          <textarea id="why_northwind" name="job_application[answers_attributes][2][text_value]" rows="5"></textarea>
+        </div>
+
+        <fieldset id="demographic_questions">
+          <legend>Voluntary Self-Identification</legend>
+          <label for="gender">Gender</label>
+          <select id="gender" name="job_application[demographic_answers_attributes][0][answer_option_ids][]">
+            <option value="">Please select</option>
+            <option value="1">Male</option>
+            <option value="2">Female</option>
+            <option value="3">Decline To Self Identify</option>
+          </select>
+        </fieldset>
+
+        <button type="submit" id="submit_app">Submit Application</button>
+      </form>
+    </div>
+  </body>
+</html>

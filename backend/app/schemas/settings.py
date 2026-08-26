@@ -103,6 +103,13 @@ class DashboardOut(BaseModel):
     top_matches: list[dict] = Field(default_factory=list)
     recent_activity: list[dict] = Field(default_factory=list)
     rejection_reasons: list[dict] = Field(default_factory=list)
+    #: The six "what is the agent doing" counters, each {count, link}. The
+    #: failed_or_stopped bucket also carries failure_reasons so the UI can name
+    #: the exact ReviewReason instead of showing an unexplained number.
+    buckets: dict[str, dict] = Field(default_factory=dict)
+    #: Why the numbers above are all zero, when they are. Without this the UI
+    #: cannot tell "nothing matched yet" from "you never added a source".
+    empty_state: dict = Field(default_factory=dict)
 
 
 class ExportOut(BaseModel):

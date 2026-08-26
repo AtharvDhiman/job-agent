@@ -101,6 +101,49 @@ export interface Company {
   applied_count: number
 }
 
+/** One of the six dashboard buckets: a count plus where clicking it goes. */
+export interface DashboardBucket {
+  count: number
+  link: string
+  /** Only on failed_or_stopped: the exact reason each stopped application gave. */
+  failure_reasons?: { reason: string; count: number; label: string }[]
+}
+
+export interface DashboardEmptyState {
+  is_empty: boolean
+  has_sources: boolean
+  has_verified_facts: boolean
+  has_resume: boolean
+  message: string
+  next_step: string
+}
+
+export type PortalStatus =
+  | 'ready'
+  | 'authorized'
+  | 'discovery_only'
+  | 'blocked'
+  | 'unsupported'
+
+export interface PortalState {
+  key: string
+  display_name: string
+  status: PortalStatus
+  compliance_tier: ComplianceTier
+  browser_submission_supported: boolean
+  automation_permitted_for_submission: boolean
+  granted_policy: SubmissionPolicy | null
+  credentials_required: string[]
+  credentials_present: boolean
+  source_count: number
+  enabled_source_count: number
+  last_run_at: string | null
+  jobs_seen: number
+  error_count: number
+  /** Plain sentences naming exactly what is stopping a submit right now. */
+  blockers: string[]
+}
+
 export interface QuickAddResult {
   job_id: string
   title: string
@@ -324,6 +367,9 @@ export interface Dashboard {
     risks: string[]
   }[]
   rejection_reasons: { decision: string; count: number }[]
+  /** The six named buckets. Keys are fixed; see DashboardBuckets below. */
+  buckets: Record<string, DashboardBucket>
+  empty_state: DashboardEmptyState
   recent_activity: {
     seq: number
     at: string

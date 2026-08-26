@@ -12,6 +12,7 @@ from app.api.v1 import (
     dashboard,
     jobs,
     notifications,
+    portals,
     privacy,
     profile,
     reviews,
@@ -33,6 +34,7 @@ api_router.include_router(jobs.router)
 # dynamic routes are PATCH and DELETE.
 api_router.include_router(source_tools.router)
 api_router.include_router(autopilot.router)
+api_router.include_router(portals.router)
 api_router.include_router(applications.router)
 api_router.include_router(reviews.router)
 api_router.include_router(settings_router.router)

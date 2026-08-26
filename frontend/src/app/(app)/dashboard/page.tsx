@@ -12,6 +12,7 @@ import {
   relativeTime,
   useAsync,
 } from '@/components/ui'
+import { DashboardBuckets } from '@/components/DashboardBuckets'
 import { api } from '@/lib/api'
 import { MATCH_DECISION_LABEL } from '@/lib/labels'
 import type { Dashboard } from '@/lib/types'
@@ -100,6 +101,8 @@ export default function DashboardPage() {
       )}
 
       {runResult ? <Banner tone="info">{runResult}</Banner> : null}
+
+      <DashboardBuckets buckets={data.buckets} emptyState={data.empty_state} />
 
       <section className="grid grid-cols-2 gap-3 md:grid-cols-5">
         <StatCard label="New matches" value={data.new_matches} href="/jobs" />

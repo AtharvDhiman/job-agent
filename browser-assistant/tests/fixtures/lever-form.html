@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Northwind Systems - Staff SRE - Apply</title>
+  </head>
+  <body>
+    <div class="content">
+      <div class="posting-header">
+        <h2>Staff Site Reliability Engineer</h2>
+        <div class="posting-categories">Remote - EU</div>
+      </div>
+
+      <!--
+        A Lever-shaped application form that has an account gate bolted onto it:
+        the candidate is expected to establish a password before the application
+        is accepted.
+
+        This is the case the per-portal layer exists for. The form itself is
+        perfectly fillable - the name, email, phone and resume controls are all
+        right there - and a filler that only looked at the fields would happily
+        complete it and walk into the gate. checkFormSafety must refuse the page
+        with login_required instead.
+
+        The password input alone is what fires, before any Lever-specific rule
+        is consulted: the wording on the page is deliberately neutral so the
+        test proves the structural detection rather than a text match.
+      -->
+      <div class="application-form">
+        <form
+          method="POST"
+          action="https://jobs.lever.co/northwind/6f0c1b1a-2f3d-4a55-9d2b-9a0b7a4c81e2/apply"
+          enctype="multipart/form-data"
+        >
+          <div class="application-field">
+            <label class="application-label" for="resume">Resume/CV</label>
+            <input type="file" id="resume" name="resume" />
+          </div>
+
+          <div class="application-field">
+            <label class="application-label" for="name">Full name<span class="required">✱</span></label>
+            <input type="text" id="name" name="name" required />
+          </div>
+
+          <div class="application-field">
+            <label class="application-label" for="email">Email<span class="required">✱</span></label>
+            <input type="email" id="email" name="email" required />
+          </div>
+
+          <div class="application-field">
+            <label class="application-label" for="phone">Phone</label>
+            <input type="tel" id="phone" name="phone" />
+          </div>
+
+          <div class="application-field">
+            <label class="application-label" for="org">Current company</label>
+            <input type="text" id="org" name="org" />
+          </div>
+
+          <div class="application-field">
+            <label class="application-label" for="urls-linkedin">LinkedIn URL</label>
+            <input type="url" id="urls-linkedin" name="urls[LinkedIn]" />
+          </div>
+
+          <!-- The account gate. -->
+          <div class="application-field candidate-account">
+            <h4>Candidate account</h4>
+            <p>Choose a password to track this application.</p>
+            <label class="application-label" for="candidate_password">Password<span class="required">✱</span></label>
+            <input type="password" id="candidate_password" name="password" required />
+          </div>
+
+          <button type="submit" class="template-btn-submit">Submit application</button>
+        </form>
+      </div>
+    </div>
+  </body>
+</html>

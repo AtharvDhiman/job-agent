@@ -20,6 +20,7 @@ import { chromium } from 'playwright';
 import type { AssistantConfig } from './config.js';
 import type { AssistantApi, ResultIn, ServerAnswer, TaskOut } from './api.js';
 import { describe } from './api.js';
+import { adapterForUrl, checkFormSafety } from './platforms/index.js';
 import {
   classify,
   detectHardStops,
@@ -173,12 +174,34 @@ async function runTask(ctx: RunnerContext, task: TaskOut, attempt: Attempt): Pro
     log('  (network never went idle; continuing with what has loaded)');
   });
 
-  const beforeFindings = await detectHardStops(page);
-  if (beforeFindings.length > 0) {
-    const reason = classify(beforeFindings);
-    log(`  HARD STOP before filling: ${reason}`);
-    for (const finding of beforeFindings) log(`    - [${finding.kind}] ${finding.marker}: ${finding.detail}`);
-    return abort(ctx, task, reason, beforeFindings, page);
+  // The portal adapter is the per-ATS half of the check: checkFormSafety runs
+  // detectHardStops itself first, then additionally proves we are actually on
+  // the application form this ATS is meant to serve, and refuses gates the
+  // generic markers do not recognise. With no adapter (a portal we have not
+  // built support for) we still run the generic pass, because discovering a job
+  // never implies its form is safe to fill.
+  const portal = adapterForUrl(task.apply_url);
+  if (portal) {
+    log(`  Portal adapter: ${portal.displayName}`);
+    const safety = await checkFormSafety(page, portal);
+    if (!safety.safe) {
+      log(`  HARD STOP before filling: ${safety.reason}`);
+      for (const finding of safety.findings) {
+        log(`    - [${finding.kind}] ${finding.marker}: ${finding.detail}`);
+      }
+      return abort(ctx, task, safety.reason, safety.findings, page);
+    }
+  } else {
+    log('  No portal adapter for this host; generic guards only.');
+    const beforeFindings = await detectHardStops(page);
+    if (beforeFindings.length > 0) {
+      const reason = classify(beforeFindings);
+      log(`  HARD STOP before filling: ${reason}`);
+      for (const finding of beforeFindings) {
+        log(`    - [${finding.kind}] ${finding.marker}: ${finding.detail}`);
+      }
+      return abort(ctx, task, reason, beforeFindings, page);
+    }
   }
 
   // ---- 6. discover and ask the server ------------------------------------

@@ -41,6 +41,11 @@ class RefreshToken(UUIDPrimaryKey, Timestamps, Base):
     jti: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    #: Set ONLY when this token was revoked by being rotated -- never by logout
+    #: or by a family-wide revocation. That distinction is what lets /auth/refresh
+    #: tell a concurrency race (two tabs spending one rotated token) apart from a
+    #: replay of a token that was already killed for another reason.
+    replaced_by_jti: Mapped[str | None] = mapped_column(String(64))
     user_agent: Mapped[str] = mapped_column(String(300), default="")
 
 

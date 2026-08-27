@@ -24,21 +24,48 @@ const PASSTHROUGH_HEADERS = ['content-type', 'content-disposition', 'cache-contr
  * a plain segment is refused rather than normalised.
  */
 
-async function refreshTokens(): Promise<{
-  access_token: string
-  refresh_token: string
-  expires_in: number
-} | null> {
+type Tokens = { access_token: string; refresh_token: string; expires_in: number }
+
+/**
+ * In-flight refreshes, keyed by the refresh token being spent.
+ *
+ * One page load fires several API calls at once. When the access token has
+ * expired they all get 401 and all reach for the same cookie, so without this
+ * they each POST /auth/refresh with the same token. The backend rotates on
+ * first use, so one wins and the rest look like replay -- which is how a user
+ * gets signed out of their own session for loading a page.
+ *
+ * The backend now tells a race apart from a replay on its own (409, not 401),
+ * but the honest fix is not to start the race. Concurrent callers share the
+ * first caller's promise, so exactly one token is ever spent.
+ *
+ * Module scope is the right lifetime: every browser request goes through this
+ * one server, and the map holds a single entry only while a refresh is open.
+ */
+const inFlight = new Map<string, Promise<Tokens | null>>()
+
+async function refreshTokens(): Promise<Tokens | null> {
   const refresh = cookies().get(REFRESH_COOKIE)?.value
   if (!refresh) return null
-  const upstream = await fetch(`${API_BASE}/auth/refresh`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ refresh_token: refresh }),
-    cache: 'no-store',
-  }).catch(() => null)
-  if (!upstream || !upstream.ok) return null
-  return upstream.json()
+
+  const existing = inFlight.get(refresh)
+  if (existing) return existing
+
+  const attempt = (async (): Promise<Tokens | null> => {
+    const upstream = await fetch(`${API_BASE}/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: refresh }),
+      cache: 'no-store',
+    }).catch(() => null)
+    if (!upstream || !upstream.ok) return null
+    return upstream.json()
+  })().finally(() => {
+    inFlight.delete(refresh)
+  })
+
+  inFlight.set(refresh, attempt)
+  return attempt
 }
 
 async function forward(request: Request, path: string[], token: string | undefined) {

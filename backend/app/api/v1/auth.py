@@ -28,13 +28,27 @@ from app.services import audit
 # app/api/v1/__init__.py) so it covers every route rather than only /auth.
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+#: How recently a refresh token must have been rotated for a second presentation
+#: of it to count as a concurrency race rather than a replay. Long enough to
+#: cover a page firing its API calls in parallel, far too short to be useful to
+#: someone replaying a captured token later. No tokens are issued on that path
+#: regardless; this only decides whether every OTHER session is destroyed too.
+REFRESH_RACE_GRACE = timedelta(seconds=20)
+
 MAX_FAILED_LOGINS = 8
 LOCKOUT_MINUTES = 15
 
 
-def _issue(db, user: User, request: Request) -> TokenOut:
+def _issue(db, user: User, request: Request, *, replaces: RefreshToken | None = None) -> TokenOut:
+    """Mint a pair. `replaces` marks the old token's death as a ROTATION.
+
+    Only this path writes `replaced_by_jti`, which is what /auth/refresh reads
+    to tell a racing tab apart from a replayed token -- see REFRESH_RACE_GRACE.
+    """
     access = create_access_token(user_id=str(user.id), role=user.role)
     refresh, jti = create_refresh_token(user_id=str(user.id))
+    if replaces is not None:
+        replaces.replaced_by_jti = jti
     db.add(
         RefreshToken(
             user_id=user.id,
@@ -187,8 +201,52 @@ def refresh(payload: RefreshIn, request: Request, db: DbSession) -> TokenOut:
         or 0
     )
     if claimed != 1:
-        # The presented token was already rotated. That is either a replay or a
-        # stolen token racing the legitimate holder; kill the whole family.
+        # The presented token was already rotated. Before calling that theft,
+        # rule out the far more common cause: one page firing several API calls
+        # at once. They all read the same cookie, all get 401, and all refresh
+        # with the same token. One wins; treating the losers as replay logs the
+        # user out of their own session for doing nothing wrong.
+        #
+        # This is not hypothetical -- it is what put 26 reuse-revocations in
+        # this app's audit log, six of them inside the same second.
+        #
+        # A replay inside the grace window still gets NOTHING: no tokens are
+        # issued on this path either way. The only thing the window changes is
+        # whether we also destroy every other session. Outside it, a replay is
+        # old enough that a benign race cannot explain it, and the family dies
+        # as before.
+        rotated_at = stored.revoked_at
+        if rotated_at is not None and rotated_at.tzinfo is None:
+            rotated_at = rotated_at.replace(tzinfo=UTC)
+        # `replaced_by_jti` is written only by rotation. A token revoked by
+        # logout or by a previous family kill leaves it NULL, and must not be
+        # forgiven as a race no matter how recent the revocation was.
+        raced = (
+            stored.replaced_by_jti is not None
+            and rotated_at is not None
+            and (now - rotated_at) <= REFRESH_RACE_GRACE
+        )
+
+        if raced:
+            audit.record(
+                db,
+                AuditAction.USER_LOGIN_FAILED,
+                user_id=stored.user_id,
+                actor="refresh_race",
+                outcome="denied",
+                ip_address=client_ip(request),
+                payload={
+                    "event": "refresh_token_race",
+                    "rotated_ms_ago": int((now - rotated_at).total_seconds() * 1000),
+                },
+            )
+            db.commit()
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "This refresh token was just rotated by a concurrent request. "
+                "Retry with the token you now hold.",
+            )
+
         revoked = _revoke_all(db, stored.user_id, now)
         audit.record(
             db,
@@ -215,7 +273,7 @@ def refresh(payload: RefreshIn, request: Request, db: DbSession) -> TokenOut:
     if user is None or not user.is_active:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User is inactive")
 
-    return _issue(db, user, request)
+    return _issue(db, user, request, replaces=stored)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)

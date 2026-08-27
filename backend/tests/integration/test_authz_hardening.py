@@ -312,7 +312,25 @@ def test_an_access_token_is_not_accepted_as_a_refresh_token(client, auth_headers
     assert response.status_code == 401
 
 
+def _age_rotation(db, jti_owner_email: str, seconds: int) -> None:
+    """Backdate every rotated token so a replay looks old rather than raced."""
+    from datetime import UTC, datetime, timedelta
+
+    from sqlalchemy import select, update
+
+    from app.models.user import RefreshToken, User
+
+    user_id = db.execute(select(User.id).where(User.email == jti_owner_email)).scalar_one()
+    db.execute(
+        update(RefreshToken)
+        .where(RefreshToken.user_id == user_id, RefreshToken.revoked_at.is_not(None))
+        .values(revoked_at=datetime.now(UTC) - timedelta(seconds=seconds))
+    )
+    db.commit()
+
+
 def test_replaying_a_rotated_refresh_token_kills_every_session(client, user, db):
+    """Genuine replay: old enough that a concurrency race cannot explain it."""
     db.commit()
     first = client.post(
         "/api/v1/auth/login",
@@ -323,6 +341,8 @@ def test_replaying_a_rotated_refresh_token_kills_every_session(client, user, db)
     assert rotated.status_code == 200
     fresh = rotated.json()
 
+    _age_rotation(db, user.email, seconds=120)
+
     # The presented token is dead.
     replay = client.post("/api/v1/auth/refresh", json={"refresh_token": first["refresh_token"]})
     assert replay.status_code == 401
@@ -330,6 +350,52 @@ def test_replaying_a_rotated_refresh_token_kills_every_session(client, user, db)
     # ...and the reuse invalidated the pair that replaced it, too.
     after = client.post("/api/v1/auth/refresh", json={"refresh_token": fresh["refresh_token"]})
     assert after.status_code == 401
+
+
+def test_two_requests_racing_on_one_refresh_token_do_not_end_the_session(client, user, db):
+    """One page firing parallel calls must not look like a stolen token.
+
+    Every request on a page reads the same cookie, so when the access token has
+    expired they all refresh with the same value. Exactly one can win. Treating
+    the losers as replay signed the user out for loading a page -- it put 26
+    reuse-revocations in this app's audit log, six inside one second.
+    """
+    db.commit()
+    first = client.post(
+        "/api/v1/auth/login",
+        json={"email": user.email, "password": "Sup3r-Secret-Passw0rd!"},
+    ).json()
+
+    winner = client.post("/api/v1/auth/refresh", json={"refresh_token": first["refresh_token"]})
+    assert winner.status_code == 200
+    fresh = winner.json()
+
+    # The loser of the race, arriving immediately after.
+    loser = client.post("/api/v1/auth/refresh", json={"refresh_token": first["refresh_token"]})
+    assert loser.status_code == 409
+    assert "concurrent" in loser.json()["detail"].lower()
+
+    # The crucial part: the session that WON is untouched, so the user stays in.
+    still_valid = client.post(
+        "/api/v1/auth/refresh", json={"refresh_token": fresh["refresh_token"]}
+    )
+    assert still_valid.status_code == 200
+
+
+def test_a_raced_refresh_issues_no_tokens(client, user, db):
+    """The grace window softens the punishment, never the refusal."""
+    db.commit()
+    first = client.post(
+        "/api/v1/auth/login",
+        json={"email": user.email, "password": "Sup3r-Secret-Passw0rd!"},
+    ).json()
+    client.post("/api/v1/auth/refresh", json={"refresh_token": first["refresh_token"]})
+
+    loser = client.post("/api/v1/auth/refresh", json={"refresh_token": first["refresh_token"]})
+    assert loser.status_code == 409
+    body = loser.json()
+    assert "access_token" not in body
+    assert "refresh_token" not in body
 
 
 def test_logout_revokes_every_refresh_token_for_the_caller(client, user, db):

@@ -20,6 +20,7 @@ dependencies = [
     "python-multipart>=0.0.9",
     "structlog>=24.4.0",
     "pypdf>=4.3.1",
+    "reportlab>=4.2",
     "python-docx>=1.1.2",
     "selectolax>=0.3.21",
     "defusedxml>=0.7.1",

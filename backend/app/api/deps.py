@@ -125,6 +125,11 @@ def get_profile(db: DbSession, user: CurrentUser) -> CandidateProfile:
 
 
 def get_agent_settings(db: DbSession, user: CurrentUser) -> AgentSettings:
+    """This account's settings, CREATING the row when it does not exist yet.
+
+    Right for a request that is about to act on those settings. Wrong for one
+    that only reports them -- see `agent_settings_or_default`.
+    """
     row = db.execute(
         select(AgentSettings).where(AgentSettings.user_id == user.id)
     ).scalar_one_or_none()
@@ -139,6 +144,40 @@ def get_agent_settings(db: DbSession, user: CurrentUser) -> AgentSettings:
         db.add(row)
         db.flush()
     return row
+
+
+def agent_settings_or_default(db: Session, user: User) -> AgentSettings:
+    """The same settings, or an unsaved stand-in carrying the same defaults.
+
+    The read-only half of the pair above. Every caller that only *displays* the
+    configuration uses this one, because writing the automation configuration
+    as a side effect of printing it is a surprise: a command that promises to
+    change nothing must not create the row that decides what the agent may do.
+
+    Not a FastAPI dependency: plain arguments, so `app.cli` and the offline
+    report can call it too.
+    """
+    row = db.execute(
+        select(AgentSettings).where(AgentSettings.user_id == user.id)
+    ).scalar_one_or_none()
+    if row is not None:
+        return row
+
+    stand_in = AgentSettings(user_id=user.id)
+    # Column defaults only fire on INSERT and this row is deliberately never
+    # inserted, so copy the scalar ones in by hand -- otherwise every threshold
+    # reads as None.
+    for column in AgentSettings.__table__.columns:
+        default = column.default
+        if default is not None and default.is_scalar and getattr(stand_in, column.key) is None:
+            setattr(stand_in, column.key, default.arg)
+    # The four the environment can override, matching what the creating half
+    # above would have written.
+    stand_in.auto_submit_min_score = settings.auto_submit_min_score
+    stand_in.daily_application_limit = settings.daily_application_limit
+    stand_in.job_max_age_hours = settings.job_max_age_hours
+    stand_in.discovery_interval_minutes = settings.discovery_interval_minutes
+    return stand_in
 
 
 def assistant_auth(

@@ -45,6 +45,7 @@ from app.services import (
     document_generator,
     fact_guard,
     notifications,
+    pdf_renderer,
     policy,
     storage,
 )
@@ -136,6 +137,10 @@ class DraftResult:
     documents: list[Document] = field(default_factory=list)
     validation_errors: list[str] = field(default_factory=list)
     blocking_questions: list[dict] = field(default_factory=list)
+    #: role -> pdf_renderer.TextLayerReport.as_dict(), one per PDF rendered.
+    #: Present whether the render was clean or not; a failed one also shows up
+    #: in `validation_errors`, which is what the policy gate reads.
+    text_layer_reports: dict[str, dict] = field(default_factory=dict)
 
 
 def today_key() -> str:
@@ -320,6 +325,100 @@ def _store_generated(
     return document
 
 
+def _store_pdf(
+    db: Session, user: User, job: Job, generated: document_generator.GeneratedDocument, kind: str
+) -> tuple[Document | None, pdf_renderer.TextLayerReport]:
+    """Render the same markdown as a PDF, and only keep it if it reads back.
+
+    A .docx or a markdown file is parsed by an ATS as a document; a PDF is
+    parsed as a drawing that happens to contain text, and the two can disagree
+    silently. So the file is proved before it is stored: `verify_text_layer`
+    reads the bytes back and compares them with the body they came from, and a
+    PDF that fails is never written and never attached. An unattached file that
+    exists is a file somebody eventually sends.
+
+    Returns the stored Document (None when the render failed) and the report
+    either way -- the caller surfaces a failure as a validation error, which is
+    an input to the policy gate.
+    """
+    body = generated.body
+    pdf_bytes = pdf_renderer.render_pdf(body, title=generated.title)
+    report = pdf_renderer.verify_text_layer(pdf_bytes, body)
+    if not report.ok:
+        log.warning(
+            "pdf.text_layer_failed",
+            kind=kind,
+            job_id=str(job.id),
+            extracted_ratio=report.extracted_ratio,
+            missing_words=report.missing_words[:5],
+            corrupt_characters=report.corrupt_characters,
+            error=report.error,
+        )
+        return None, report
+
+    digest = storage.sha256_of(pdf_bytes)
+    existing = db.execute(
+        select(Document).where(
+            Document.user_id == user.id, Document.sha256 == digest, Document.kind == kind
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        existing.generated_for_job_id = job.id
+        existing.generation_meta = {**generated.meta, "text_layer": report.as_dict()}
+        existing.label = generated.title
+        db.flush()
+        return existing, report
+
+    filename = f"{kind}-{job.company_normalized or 'job'}.pdf"
+    key = storage.build_key(user.id, kind, digest, f"{kind}.pdf")
+    storage.get_storage().write(key, pdf_bytes)
+    document = Document(
+        user_id=user.id,
+        kind=kind,
+        label=generated.title,
+        filename=filename,
+        content_type="application/pdf",
+        storage_key=key,
+        size_bytes=len(pdf_bytes),
+        sha256=digest,
+        generated_for_job_id=job.id,
+        generation_meta={**generated.meta, "text_layer": report.as_dict()},
+    )
+    db.add(document)
+    db.flush()
+    audit.record(
+        db,
+        AuditAction.DOCUMENT_GENERATED,
+        user_id=user.id,
+        object_type="document",
+        object_id=str(document.id),
+        payload={"kind": kind, "job_id": str(job.id), "format": "pdf"},
+    )
+    return document, report
+
+
+def _text_layer_error(role: str, report: pdf_renderer.TextLayerReport) -> str:
+    """One sentence naming what the PDF lost, for the human reading the review.
+
+    Never "PDF generation failed": the render succeeded, which is the whole
+    problem -- the file exists and looks correct, and only reading it back
+    showed what a parser would receive.
+    """
+    label = role.replace("_", " ")
+    if report.error:
+        return f"The {label} PDF could not be read back after rendering: {report.error}"
+    details = []
+    if report.missing_words:
+        details.append("words lost: " + ", ".join(report.missing_words[:8]))
+    if report.corrupt_characters:
+        details.append("characters mangled: " + ", ".join(report.corrupt_characters[:8]))
+    suffix = f" ({'; '.join(details)})" if details else ""
+    return (
+        f"The {label} PDF did not survive rendering, so no PDF was attached"
+        f"{suffix}. The markdown version is unaffected."
+    )
+
+
 def draft_application(
     db: Session,
     user: User,
@@ -362,6 +461,23 @@ def draft_application(
     generated_docs: list[Document] = []
     guard_flags: list[dict] = []
     critiques: dict[str, dict] = {}
+    #: role -> the report from reading the rendered PDF back. A failed one
+    #: becomes a validation error below, which the policy gate counts.
+    text_layer_reports: dict[str, dict] = {}
+    text_layer_errors: list[str] = []
+
+    def attach_pdf(generated: document_generator.GeneratedDocument, kind: str, role: str) -> None:
+        document, report = _store_pdf(db, user, job, generated, kind)
+        text_layer_reports[role] = report.as_dict()
+        if document is None:
+            text_layer_errors.append(_text_layer_error(role, report))
+            return
+        generated_docs.append(document)
+        db.add(
+            ApplicationDocument(
+                application_id=application.id, document_id=document.id, role=f"{role}_pdf"
+            )
+        )
 
     resume = document_generator.generate_resume(profile, facts, job)
     guard_flags += resume.guard.get("flags", [])
@@ -376,6 +492,7 @@ def draft_application(
     db.add(
         ApplicationDocument(application_id=application.id, document_id=resume_doc.id, role="resume")
     )
+    attach_pdf(resume, DocumentKind.RESUME_GENERATED.value, "resume")
 
     if include_cover_letter:
         letter = document_generator.generate_cover_letter(profile, facts, job)
@@ -392,6 +509,7 @@ def draft_application(
                 application_id=application.id, document_id=letter_doc.id, role="cover_letter"
             )
         )
+        attach_pdf(letter, DocumentKind.COVER_LETTER_GENERATED.value, "cover_letter")
 
     # --- answers ---------------------------------------------------------
     question_list = questions if questions is not None else BASELINE_QUESTIONS
@@ -424,6 +542,10 @@ def draft_application(
         ).scalars()
     )
     validation_errors = validate_preflight(application, job, profile, answer_rows, document_rows)
+    # A PDF that did not read back is a pre-flight failure, not a footnote: it
+    # is counted by the policy gate below exactly like any other one, so a
+    # document a parser would garble can never be submitted automatically.
+    validation_errors += text_layer_errors
     blocking = [
         {"question": a.question.text, "reason": a.reason, "type": a.question.type}
         for a in drafted
@@ -504,6 +626,7 @@ def draft_application(
         documents=generated_docs,
         validation_errors=validation_errors,
         blocking_questions=blocking,
+        text_layer_reports=text_layer_reports,
     )
 
 

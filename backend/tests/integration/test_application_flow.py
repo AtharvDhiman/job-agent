@@ -41,16 +41,50 @@ def test_draft_generates_documents_that_pass_the_fact_guard(
     detail = client.get(f"/api/v1/applications/{application_id}", headers=auth_headers).json()
 
     roles = {d["role"] for d in detail["documents"]}
-    assert roles == {"resume", "cover_letter"}
+    # Each generated document is attached twice: the markdown source, and the
+    # PDF that was rendered from it and read back before it was kept.
+    assert roles == {"resume", "resume_pdf", "cover_letter", "cover_letter_pdf"}
     blocking = [f for f in detail["fact_guard_flags"] if f["severity"] == "block"]
     assert blocking == [], blocking
 
     documents = client.get("/api/v1/documents?kind=resume_generated", headers=auth_headers).json()
-    content = client.get(
-        f"/api/v1/documents/{documents[0]['id']}/content", headers=auth_headers
-    ).text
+    markdown = next(d for d in documents if d["content_type"] == "text/markdown")
+    content = client.get(f"/api/v1/documents/{markdown['id']}/content", headers=auth_headers).text
     assert "Northwind Systems" in content  # a verified employer
     assert "AWS Certified" not in content  # the unverified certification
+
+
+def test_the_generated_pdf_is_proved_to_read_back_before_it_is_attached(
+    client, auth_headers, profile, facts, job
+):
+    """The PDF is the file a recruiter's parser reads, so it is verified, not assumed.
+
+    A PDF is parsed as a drawing that happens to contain text, and a resume can
+    look immaculate on screen while extracting as garbage. pdf_renderer reads
+    the bytes back; this asserts that check runs on the drafting path rather
+    than only in its own unit tests.
+    """
+    import io
+
+    import pypdf
+
+    application_id = _draft(client, auth_headers, job).json()["application"]["id"]
+    detail = client.get(f"/api/v1/applications/{application_id}", headers=auth_headers).json()
+    pdf_attachment = next(d for d in detail["documents"] if d["role"] == "resume_pdf")
+
+    documents = client.get("/api/v1/documents?kind=resume_generated", headers=auth_headers).json()
+    stored = next(d for d in documents if d["id"] == pdf_attachment["document_id"])
+    assert stored["content_type"] == "application/pdf"
+    # The proof is kept with the file, not recomputed by whoever asks later.
+    report = stored["generation_meta"]["text_layer"]
+    assert report["ok"] is True
+    assert report["missing_words"] == []
+    assert report["corrupt_characters"] == []
+
+    content = client.get(f"/api/v1/documents/{stored['id']}/content", headers=auth_headers).content
+    assert content.startswith(b"%PDF")
+    pages = pypdf.PdfReader(io.BytesIO(content)).pages
+    assert "Northwind Systems" in " ".join(page.extract_text() or "" for page in pages)
 
 
 def test_required_questions_the_agent_cannot_answer_block_approval(

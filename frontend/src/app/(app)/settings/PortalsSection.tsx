@@ -20,7 +20,7 @@ const STATUS_META: Record<
   ready: {
     label: 'Ready',
     chip: 'bg-good-soft text-good',
-    blurb: 'Authorized, automation on, and nothing blocking a submit right now.',
+    blurb: 'Authorized and switched on. A job from this portal would be submitted.',
   },
   authorized: {
     label: 'Authorized',
@@ -115,13 +115,27 @@ export function PortalsSection() {
               ) : null}
 
               {portal.blockers.length > 0 ? (
-                <ul className="mt-2 space-y-0.5">
-                  {portal.blockers.map((blocker) => (
-                    <li key={blocker} className="text-xs text-warn">
-                      - {blocker}
-                    </li>
-                  ))}
-                </ul>
+                <>
+                  {/*
+                   * `status` is about SUBMITTING; some blockers are only about
+                   * DISCOVERY. A portal with no source is genuinely ready to
+                   * submit a job you paste in yourself, so saying it is blocked
+                   * would be wrong -- but so would listing a blocker under a
+                   * heading claiming nothing is wrong. Name which half applies.
+                   */}
+                  <p className="mt-2 text-xs font-medium text-ink-soft">
+                    {portal.status === 'ready'
+                      ? 'Submitting works. These only stop it finding jobs on its own:'
+                      : 'What is stopping a submit right now:'}
+                  </p>
+                  <ul className="mt-1 space-y-0.5">
+                    {portal.blockers.map((blocker) => (
+                      <li key={blocker} className="text-xs text-warn">
+                        - {blocker}
+                      </li>
+                    ))}
+                  </ul>
+                </>
               ) : portal.status === 'ready' ? (
                 <p className="mt-2 text-xs text-good">
                   Nothing is blocking this portal. Start the local browser assistant and it will

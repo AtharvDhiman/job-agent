@@ -138,6 +138,27 @@ def test_fully_switched_on_greenhouse_is_ready_with_no_blockers(
     assert row["granted_policy"] == "auto_submit"
 
 
+def test_a_ready_portal_may_still_report_discovery_blockers(client, auth_headers, automation_on):
+    """`status` answers "would a submit happen", not "is everything set up".
+
+    An authorized portal with no source is genuinely ready to submit: paste a
+    Greenhouse link into quick-add and it goes. What it cannot do is find that
+    job on its own. Both facts are true at once, so the status stays `ready`
+    while the blocker is still reported -- the two are appended on either side
+    of the demotion check in portal_status.py on purpose.
+
+    The UI relies on this: it reads `status == "ready"` to decide whether to
+    head the blocker list "these only stop it finding jobs on its own" instead
+    of "what is stopping a submit right now".
+    """
+    assert authorize(client, auth_headers).status_code == 200
+    client.post("/api/v1/settings/resume", headers=auth_headers)
+
+    row = portals(client, auth_headers)["greenhouse"]
+    assert row["status"] == "ready"
+    assert row["blockers"] == ["No source configured"]
+
+
 def test_daily_limit_demotes_a_ready_portal(client, auth_headers, db, user, automation_on):
     db.add(
         JobSourceSubscription(

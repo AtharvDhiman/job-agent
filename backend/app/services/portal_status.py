@@ -145,9 +145,21 @@ def portal_states(db: Session, user: User, agent_settings: AgentSettings) -> lis
         if prohibited:
             status = "blocked"
             blockers.append(f"{name} prohibits automated applying in its terms.")
+            # Say plainly whether ANY job arrives. "Matched roles become review
+            # tasks" reads as "roles are arriving and being routed", which is
+            # false when nothing can be fetched -- and that is the normal case
+            # here, since these connectors need a partner token almost nobody
+            # holds. Promising a pipeline that does not exist is worse than
+            # saying the platform is off limits.
             if discovery_impossible:
                 blockers.append(
-                    f"{name} also has no API to discover from; paste individual job URLs."
+                    f"No {name} jobs arrive automatically -- there is no API to "
+                    "discover from. Paste individual job URLs instead."
+                )
+            elif not described["available"]:
+                blockers.append(
+                    f"No {name} jobs arrive automatically without your own API "
+                    "credentials. Paste individual job URLs instead."
                 )
             else:
                 blockers.append(

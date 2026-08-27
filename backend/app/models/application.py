@@ -56,6 +56,9 @@ class Application(UUIDPrimaryKey, Timestamps, Base):
     summary: Mapped[str] = mapped_column(Text, default="")
     fact_guard_flags: Mapped[list] = mapped_column(JSONType, default=list)
     validation_errors: Mapped[list] = mapped_column(JSONType, default=list)
+    #: Advisory quality report per document role ("resume", "cover_letter").
+    #: Never blocks -- fact_guard_flags is the blocking one. See document_critic.
+    critique: Mapped[dict] = mapped_column(JSONType, default=dict)
     prefilled_fields: Mapped[dict] = mapped_column(JSONType, default=dict)
 
     approved_by_user_id: Mapped[uuid.UUID | None] = mapped_column(

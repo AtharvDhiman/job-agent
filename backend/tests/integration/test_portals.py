@@ -246,3 +246,23 @@ def test_source_counters_are_per_user(client, auth_headers, db, user):
     assert lever["jobs_seen"] == 0
     assert lever["last_run_at"] is None
     assert any("No source configured" in b for b in lever["blockers"])
+
+
+@pytest.mark.parametrize("platform", ["linkedin", "indeed", "naukri"])
+def test_a_blocked_portal_never_implies_jobs_are_arriving(client, auth_headers, platform):
+    """Do not promise a pipeline that does not exist.
+
+    "Matched roles always become review tasks" reads as "roles ARE arriving and
+    being routed to review". For these three, nothing arrives at all: Naukri has
+    no API, and LinkedIn/Indeed need a partner token almost nobody holds. A user
+    reading the old wording reasonably concluded their agent was collecting
+    LinkedIn jobs and hiding them in a queue.
+    """
+    row = portals(client, auth_headers)[platform]
+    assert row["status"] == "blocked"
+    assert row["jobs_seen"] == 0
+
+    blockers = " ".join(row["blockers"])
+    assert "arrive automatically" in blockers
+    assert "Paste individual job URLs" in blockers
+    assert "Matched" not in blockers

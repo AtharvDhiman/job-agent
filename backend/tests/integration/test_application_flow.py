@@ -194,3 +194,59 @@ def test_pause_is_instant_and_audited(client, auth_headers):
     entries = client.get("/api/v1/audit?action=automation.paused", headers=auth_headers).json()
     assert entries["total"] >= 1
     assert entries["items"][0]["payload"]["reason"] == "stop everything"
+
+
+# ---------------------------------------------------------------------------
+# The critic is the counterpart to fact_guard: it reports what the document
+# left OUT, and unlike the guard it may never block.
+# ---------------------------------------------------------------------------
+def test_drafting_attaches_an_advisory_critique(client, auth_headers, profile, facts, job):
+    application_id = _draft(client, auth_headers, job).json()["application"]["id"]
+    detail = client.get(f"/api/v1/applications/{application_id}", headers=auth_headers).json()
+
+    assert "critique" in detail, "the critique must reach the API, not just the row"
+    assert "resume" in detail["critique"]
+    assert "cover_letter" in detail["critique"]
+
+    resume_critique = detail["critique"]["resume"]
+    assert 0 <= resume_critique["score"] <= 100
+    assert 0.0 <= resume_critique["keyword_coverage"] <= 1.0
+    assert resume_critique["word_count"] > 0
+    assert isinstance(resume_critique["findings"], list)
+
+
+def test_the_critique_never_blocks_an_application(client, auth_headers, profile, facts, job):
+    """fact_guard can stop an application. The critic advises and nothing more."""
+    response = _draft(client, auth_headers, job)
+    application_id = response.json()["application"]["id"]
+    detail = client.get(f"/api/v1/applications/{application_id}", headers=auth_headers).json()
+
+    # It ran and has an opinion...
+    assert detail["critique"]["resume"]["findings"] is not None
+    # ...and the application's fate is unchanged by it.
+    assert detail["status"] != "blocked"
+    assert detail["validation_errors"] == []
+
+
+def test_the_critique_only_ever_suggests_facts_the_candidate_owns(
+    client, auth_headers, profile, facts, job
+):
+    """The anti-fabrication guarantee, asserted through the real pipeline.
+
+    A critic that could suggest arbitrary keywords would be a fabrication vector
+    wearing a helpful hat, so every suggestion must trace to a stored string.
+    """
+    application_id = _draft(client, auth_headers, job).json()["application"]["id"]
+    detail = client.get(f"/api/v1/applications/{application_id}", headers=auth_headers).json()
+
+    owned = {
+        s.lower() for s in client.get("/api/v1/profile", headers=auth_headers).json()["skills"]
+    }
+    for fact in client.get("/api/v1/facts", headers=auth_headers).json():
+        if fact["verified"]:
+            owned |= {t.lower() for t in fact.get("tags") or []}
+
+    for report in detail["critique"].values():
+        for finding in report["findings"]:
+            if finding.get("suggestion"):
+                assert finding["suggestion"].lower() in owned, finding

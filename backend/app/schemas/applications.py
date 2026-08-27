@@ -59,6 +59,8 @@ class ApplicationOut(ORMModel):
     summary: str
     fact_guard_flags: list[dict]
     validation_errors: list[str]
+    #: Advisory per-document quality report. Never blocks; see document_critic.
+    critique: dict = {}
     prefilled_fields: dict
     approved_at: datetime | None
     submitted_at: datetime | None

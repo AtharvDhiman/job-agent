@@ -39,7 +39,15 @@ from app.models.job import Job, JobMatch
 from app.models.profile import CandidateProfile, CareerFact, Document
 from app.models.user import AgentSettings, PlatformAuthorization, User
 from app.services import answers as answers_service
-from app.services import audit, document_generator, fact_guard, notifications, policy, storage
+from app.services import (
+    audit,
+    document_critic,
+    document_generator,
+    fact_guard,
+    notifications,
+    policy,
+    storage,
+)
 from app.utils.text import truncate
 
 log = get_logger(__name__)
@@ -353,9 +361,16 @@ def draft_application(
     # --- documents -------------------------------------------------------
     generated_docs: list[Document] = []
     guard_flags: list[dict] = []
+    critiques: dict[str, dict] = {}
 
     resume = document_generator.generate_resume(profile, facts, job)
     guard_flags += resume.guard.get("flags", [])
+    # Advisory only. fact_guard can block this application; the critic never
+    # does -- it reports what the document left on the table so a human can
+    # decide. See document_critic's module docstring for why they are separate.
+    critiques["resume"] = document_critic.critique(
+        resume.body, job=job, profile=profile, facts=facts, kind="resume"
+    ).as_dict()
     resume_doc = _store_generated(db, user, job, resume, DocumentKind.RESUME_GENERATED.value)
     generated_docs.append(resume_doc)
     db.add(
@@ -365,6 +380,9 @@ def draft_application(
     if include_cover_letter:
         letter = document_generator.generate_cover_letter(profile, facts, job)
         guard_flags += letter.guard.get("flags", [])
+        critiques["cover_letter"] = document_critic.critique(
+            letter.body, job=job, profile=profile, facts=facts, kind="cover letter"
+        ).as_dict()
         letter_doc = _store_generated(
             db, user, job, letter, DocumentKind.COVER_LETTER_GENERATED.value
         )
@@ -435,6 +453,7 @@ def draft_application(
 
     application.submission_policy = decision.policy
     application.fact_guard_flags = guard_flags
+    application.critique = critiques
     application.validation_errors = validation_errors
     application.summary = _summary(job, match, decision, generated_docs, blocking)
     application.prefilled_fields = {

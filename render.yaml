@@ -1,0 +1,143 @@
+# Render Blueprint. See docs/DEPLOY-RENDER.md for the reasoning behind each line.
+#
+# Secrets are `sync: false` on purpose: Render prompts you for them at apply time
+# and never stores them in git. Enter SECRET_KEY / ENCRYPTION_KEY / DATABASE_URL /
+# BROWSER_ASSISTANT_TOKEN ONCE in the jobagent-shared group, not per service —
+# nothing validates that separate copies match, and an ENCRYPTION_KEY that differs
+# by one character means the worker writes rows the API can never decrypt.
+
+envVarGroups:
+  - name: jobagent-shared
+    envVars:
+      # APP_ENV must be `production` from the FIRST deploy. Blank falls back to
+      # development, where the Fernet key is derived from SECRET_KEY — everything
+      # written in that state is unreadable once you set a real ENCRYPTION_KEY.
+      - key: APP_ENV
+        value: production
+      # Render's Postgres URL is `postgres://`; this app uses psycopg 3, so the
+      # scheme must be rewritten to `postgresql+psycopg://` before pasting.
+      - key: DATABASE_URL
+        sync: false
+      - key: SECRET_KEY
+        sync: false
+      - key: ENCRYPTION_KEY
+        sync: false
+      # Set only when recovering data written under the derived development key.
+      - key: ENCRYPTION_KEY_PREVIOUS
+        sync: false
+      - key: STORAGE_LOCAL_PATH
+        value: /opt/render/project/src/backend/storage
+
+databases:
+  - name: jobagent-db
+    databaseName: jobagent
+    user: jobagent
+    plan: free
+
+services:
+  # ---------------------------------------------------------------------------
+  # Redis. Without it nothing runs on a schedule. If you drop this service, keep
+  # a REDIS_URL row set to an EMPTY STRING rather than deleting it — the default
+  # is redis://localhost:6379/0, so a missing row points the API at a Redis that
+  # does not exist and /health reports `redis: error` forever.
+  # ---------------------------------------------------------------------------
+  - type: keyvalue
+    name: jobagent-redis
+    plan: free
+    ipAllowList: []
+
+  # ---------------------------------------------------------------------------
+  # Backend API. Must be PUBLIC: the browser assistant runs on your own laptop
+  # and connects to it. --host 0.0.0.0 --port $PORT are both mandatory.
+  # ---------------------------------------------------------------------------
+  - type: web
+    name: jobagent-api
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    # Liveness only — it returns 200 with status "degraded" when the database is
+    # unmigrated, so a green check here does NOT mean step 5 was done.
+    healthCheckPath: /health
+    envVars:
+      - fromGroup: jobagent-shared
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: jobagent-redis
+          property: connectionString
+      - key: FRONTEND_ORIGIN
+        sync: false          # https://jobagent-web.onrender.com
+      - key: BROWSER_ASSISTANT_TOKEN
+        sync: false          # same value goes in browser-assistant/.env
+      - key: AUTOMATION_GLOBAL_ENABLED
+        value: "true"
+      - key: ANTHROPIC_API_KEY
+        sync: false          # optional; deterministic templates are used without it
+
+  - type: worker
+    name: jobagent-worker
+    runtime: python
+    plan: starter
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: celery -A app.workers.celery_app worker --loglevel=INFO --concurrency=2
+    envVars:
+      - fromGroup: jobagent-shared
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: jobagent-redis
+          property: connectionString
+
+  - type: worker
+    name: jobagent-beat
+    runtime: python
+    plan: starter
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: celery -A app.workers.celery_app beat --loglevel=INFO
+    envVars:
+      - fromGroup: jobagent-shared
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: jobagent-redis
+          property: connectionString
+
+  # ---------------------------------------------------------------------------
+  # Frontend.
+  #
+  # NODE_ENV is deliberately NOT set. npm omits devDependencies when
+  # NODE_ENV=production, and tailwindcss/postcss/typescript all live there, so
+  # setting it makes `next build` fail outright. `next build` sets NODE_ENV
+  # itself for the compile, so cookies still get Secure. --include=dev defends
+  # against the platform setting it for us.
+  #
+  # -p $PORT is mandatory: package.json's start script hardcodes port 3000.
+  # ---------------------------------------------------------------------------
+  - type: web
+    name: jobagent-web
+    runtime: node
+    plan: free
+    rootDir: frontend
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npx next start -p $PORT
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      # Needs the scheme AND the /api/v1 suffix, no trailing slash. Do NOT use
+      # `fromService … property: host` — that yields a bare hostname with no
+      # scheme, and every server-side fetch then throws, returning 503 on every
+      # request including login while still serving HTML.
+      - key: API_INTERNAL_URL
+        sync: false          # https://jobagent-api.onrender.com/api/v1
+      - key: NEXT_TELEMETRY_DISABLED
+        value: "1"

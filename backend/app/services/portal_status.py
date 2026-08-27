@@ -137,16 +137,27 @@ def portal_states(db: Session, user: User, agent_settings: AgentSettings) -> lis
         has_grant = granted_policy in {policy.value for policy in AUTOMATION_POLICIES}
 
         blockers: list[str] = []
-        if discovery_impossible:
+        # Prohibition outranks capability. Both can be true at once -- Naukri
+        # neither exposes a candidate API nor permits automated applying -- and
+        # of the two, "we will never automate this" is the fact that does not
+        # change if someone later writes a fetcher. Reporting the capability gap
+        # instead would read as a TODO rather than a decision.
+        if prohibited:
+            status = "blocked"
+            blockers.append(f"{name} prohibits automated applying in its terms.")
+            if discovery_impossible:
+                blockers.append(
+                    f"{name} also has no API to discover from; paste individual job URLs."
+                )
+            else:
+                blockers.append(
+                    f"Matched {name} roles always become review tasks with a link "
+                    "you open yourself."
+                )
+        elif discovery_impossible:
             status = "unsupported"
             blockers.append(
                 f"{name} cannot discover jobs automatically; you add each posting yourself."
-            )
-        elif prohibited:
-            status = "blocked"
-            blockers.append(f"{name} prohibits automated applying in its terms.")
-            blockers.append(
-                f"Matched {name} roles always become review tasks with a link you open yourself."
             )
         elif not connector.browser_submission_supported:
             status = "discovery_only"

@@ -40,14 +40,31 @@ def test_registry_refuses_a_connector_without_a_policy():
         local.register(Sneaky)
 
 
-def test_linkedin_and_indeed_can_never_be_auto_submitted():
-    for key in ("linkedin", "indeed"):
+def test_prohibited_platforms_can_never_be_auto_submitted():
+    """The guarantee every prohibited platform shares, whatever its tier."""
+    for key in ("linkedin", "indeed", "naukri"):
         connector = registry.get(key)
-        assert connector.submission_policy_default is SubmissionPolicy.PROHIBITED
-        assert connector.compliance_tier is ComplianceTier.PARTNER_API
+        assert connector.submission_policy_default is SubmissionPolicy.PROHIBITED, key
         described = connector.describe()
-        assert described["automation_permitted_for_submission"] is False
-        assert described["requires_user_review_by_default"] is True
+        assert described["automation_permitted_for_submission"] is False, key
+        assert described["browser_submission_supported"] is False, key
+        assert described["requires_user_review_by_default"] is True, key
+
+
+def test_prohibited_platforms_declare_the_right_reason_for_being_prohibited():
+    """Tier is the WHY, and the two whys are not interchangeable.
+
+    LinkedIn and Indeed have real partner APIs -- a token exists, you may hold
+    one, and the connector is written to use it. Naukri has no candidate API at
+    all, so PARTNER_API would advertise a door that is not there. MANUAL_ONLY
+    says the only route is pasting a URL, which is the truth.
+    """
+    for key in ("linkedin", "indeed"):
+        assert registry.get(key).compliance_tier is ComplianceTier.PARTNER_API, key
+        assert registry.get(key).required_credentials, key
+
+    assert registry.get("naukri").compliance_tier is ComplianceTier.MANUAL_ONLY
+    assert registry.get("naukri").required_credentials == ()
 
 
 def test_no_connector_defaults_to_automated_submission():

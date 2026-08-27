@@ -65,7 +65,7 @@ def test_results_are_ordered_ready_first(client, auth_headers):
     assert ordered == sorted(ordered)
 
 
-@pytest.mark.parametrize("platform", ["linkedin", "indeed"])
+@pytest.mark.parametrize("platform", ["linkedin", "indeed", "naukri"])
 def test_prohibited_platforms_are_blocked_and_stay_blocked(client, auth_headers, platform):
     row = portals(client, auth_headers)[platform]
     assert row["status"] == "blocked"

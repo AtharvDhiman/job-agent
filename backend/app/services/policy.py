@@ -16,7 +16,7 @@ from app.models.job import Job
 from app.models.user import AgentSettings, PlatformAuthorization
 
 #: Platforms whose terms forbid automated applying. Not configurable at runtime.
-HARD_PROHIBITED_PLATFORMS = frozenset({"linkedin", "indeed"})
+HARD_PROHIBITED_PLATFORMS = frozenset({"linkedin", "indeed", "naukri"})
 
 #: Review reasons a human pressing "approve" is allowed to lift when the browser
 #: assistant later asks for work. They all mean "this application did not clear a

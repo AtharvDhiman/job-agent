@@ -165,10 +165,10 @@ describe('platforms this assistant never automates', () => {
 
   it('mirrors the backend hard-prohibited list', () => {
     // HARD_PROHIBITED_PLATFORMS in backend/app/services/policy.py
-    expect([...PROHIBITED_CONNECTORS].sort()).toEqual(['indeed', 'linkedin']);
+    expect([...PROHIBITED_CONNECTORS].sort()).toEqual(['indeed', 'linkedin', 'naukri']);
   });
 
-  it.each(['linkedin', 'LinkedIn', ' INDEED '])('refuses connector %s', (key) => {
+  it.each(['linkedin', 'LinkedIn', ' INDEED ', 'naukri', ' Naukri '])('refuses connector %s', (key) => {
     expect(connectorIsProhibited(key)).toBe(true);
     const verdict = taskIsAllowed({ ...base, connector_key: key });
     expect(verdict.allowed).toBe(false);
@@ -187,6 +187,9 @@ describe('platforms this assistant never automates', () => {
     'https://linkedin.com/jobs/view/1',
     'https://uk.indeed.com/viewjob?jk=abc',
     'https://www.indeed.com/applystart?jk=abc',
+    'https://www.naukri.com/job-listings-data-analyst-acme-1',
+    'https://naukri.com/jobs',
+    'https://www.naukrigulf.com/job-x',
   ])('refuses %s by hostname even when the connector key looks innocent', (url) => {
     expect(urlIsProhibited(url)).toBe(true);
     expect(taskIsAllowed({ ...base, connector_key: 'careers_page', apply_url: url }).allowed).toBe(false);
@@ -197,6 +200,8 @@ describe('platforms this assistant never automates', () => {
     'https://jobs.lever.co/example/1',
     'https://notlinkedin.com/jobs/1',
     'https://careers.example.com/linkedin-engineer',
+    'https://notnaukri.com/jobs/1',
+    'https://careers.example.com/naukri-integration-engineer',
   ])('allows %s', (url) => {
     expect(urlIsProhibited(url)).toBe(false);
     expect(taskIsAllowed({ ...base, apply_url: url }).allowed).toBe(true);

@@ -35,7 +35,7 @@ const STATUS_META: Record<
   blocked: {
     label: 'Never automated',
     chip: 'bg-bad-soft text-bad',
-    blurb: 'This platform prohibits automated applying in its terms. Discovery only, permanently.',
+    blurb: 'Their terms forbid automated applying. This can never be enabled; the blockers below say what is still possible.',
   },
   unsupported: {
     label: 'Manual only',

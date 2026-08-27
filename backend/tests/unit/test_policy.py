@@ -119,7 +119,7 @@ def test_validation_errors_prevent_submission():
     assert ReviewReason.VALIDATION_FAILED.value in decision.review_reasons
 
 
-@pytest.mark.parametrize("platform", ["linkedin", "indeed"])
+@pytest.mark.parametrize("platform", ["linkedin", "indeed", "naukri"])
 def test_prohibited_platforms_can_never_be_automated(platform):
     """Even with a full grant, a perfect score and automation on."""
     decision = decide(
@@ -152,7 +152,7 @@ def test_connector_level_prohibition_is_respected_even_for_other_platforms():
 # --------------------------------------------------------------------------
 # The job row is a snapshot; the registry is the current truth.
 # --------------------------------------------------------------------------
-@pytest.mark.parametrize("platform", ["linkedin", "indeed"])
+@pytest.mark.parametrize("platform", ["linkedin", "indeed", "naukri"])
 def test_a_stale_job_row_cannot_unprohibit_a_platform(platform):
     """A row ingested before the connector was pinned to PROHIBITED must lose."""
     decision = decide(

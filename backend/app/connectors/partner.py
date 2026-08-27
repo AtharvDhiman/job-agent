@@ -1,8 +1,10 @@
-"""Platforms that require YOUR OWN API agreement, plus the two we never automate.
+"""Platforms that require YOUR OWN API agreement, plus the ones we never automate.
 
-LinkedIn and Indeed are registered so the UI can explain *why* they are absent
-rather than silently omitting them. Both refuse to fetch without partner
-credentials and both pin submission to PROHIBITED. See docs/COMPLIANCE.md.
+LinkedIn, Indeed and Naukri are registered so the UI can explain *why* they are
+absent rather than silently omitting them. All three pin submission to
+PROHIBITED. LinkedIn and Indeed refuse to fetch without partner credentials;
+Naukri has no candidate API to hold credentials for at all. See
+docs/COMPLIANCE.md.
 """
 
 from __future__ import annotations
@@ -141,6 +143,52 @@ class AdzunaConnector(BaseConnector):
                 )
             )
         return FetchResult(jobs=jobs, etag="")
+
+
+@registry.register
+class NaukriConnector(BaseConnector):
+    """Registered to be refused loudly, not to fetch anything.
+
+    Naukri publishes no candidate-facing job-search API -- no developer portal,
+    no self-serve key, no documented endpoint. The only integrations that exist
+    are employer-side deals arranged with their sales team.
+
+    That leaves scraping as the only technical route, and scraping is closed
+    too: https://www.naukri.com/robots.txt answers 403 to an ordinary request,
+    so PoliteClient cannot even read the file that would tell it what is
+    permitted. A crawler that cannot read robots.txt has to fail closed.
+
+    So this connector exists for the same reason LinkedIn's does: a user
+    searching for Naukri should find it and be told why it is review-only,
+    rather than wondering whether we simply forgot India's largest job board.
+    Pasting a Naukri URL into quick-add still works and is the supported path.
+    """
+
+    key = "naukri"
+    display_name = "Naukri (review only)"
+    #: Not PARTNER_API: that tier promises a token could unlock it, and for a
+    #: candidate no such token exists to hold.
+    compliance_tier = ComplianceTier.MANUAL_ONLY
+    submission_policy_default = SubmissionPolicy.PROHIBITED
+    policy_note = (
+        "Naukri has no public job-search API, and naukri.com returns 403 for "
+        "robots.txt, so automated discovery would mean working around bot "
+        "protection. This app will not do that. Automated applying is "
+        "PROHIBITED and cannot be enabled. Paste a Naukri job URL with its "
+        "description into quick-add: it is scored and drafted for you, and you "
+        "submit it yourself on their site."
+    )
+    required_credentials = ()
+    identifier_label = "Not applicable"
+    identifier_help = "Naukri cannot be polled. Paste individual job URLs instead."
+
+    def fetch(self, spec: SourceSpec, *, etag: str = "") -> FetchResult:
+        raise BlockedByPolicyError(
+            "Naukri cannot be polled: it publishes no candidate job-search API and "
+            "serves 403 for robots.txt, so there is no compliant way to fetch it. "
+            "Paste a Naukri job URL into quick-add, or add the employer's own ATS "
+            "board (Greenhouse/Lever/Ashby/Workable/SmartRecruiters) instead."
+        )
 
 
 @registry.register

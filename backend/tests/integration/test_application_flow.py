@@ -121,7 +121,7 @@ def test_authorization_can_be_granted_and_revoked(client, auth_headers):
     assert revoked.json()["policy"] == "review_required"
 
 
-@pytest.mark.parametrize("platform", ["linkedin", "indeed"])
+@pytest.mark.parametrize("platform", ["linkedin", "indeed", "naukri"])
 def test_prohibited_platforms_cannot_be_authorized_at_all(client, auth_headers, platform):
     response = client.post(
         "/api/v1/settings/authorizations",

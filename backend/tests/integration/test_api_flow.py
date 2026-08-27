@@ -60,7 +60,7 @@ def test_connector_catalogue_states_every_policy(client):
     connectors = {c["key"]: c for c in client.get("/api/v1/connectors").json()}
     assert connectors["greenhouse"]["compliance_tier"] == "public_job_api"
     assert connectors["greenhouse"]["requires_user_review_by_default"] is True
-    for key in ("linkedin", "indeed"):
+    for key in ("linkedin", "indeed", "naukri"):
         assert connectors[key]["automation_permitted_for_submission"] is False
         assert connectors[key]["policy_note"]
     assert all(c["policy_note"] for c in connectors.values())

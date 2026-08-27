@@ -57,7 +57,7 @@ export const NEVER_DO: string[] = [
  * server told me to": a bug, a stale row or a tampered response upstream must
  * not be able to point this program at a platform whose terms forbid it.
  */
-export const PROHIBITED_CONNECTORS: readonly string[] = ['linkedin', 'indeed'];
+export const PROHIBITED_CONNECTORS: readonly string[] = ['linkedin', 'indeed', 'naukri'];
 
 /**
  * The browser assistant is deliberately allow-listed. Other connectors can
@@ -73,7 +73,8 @@ export const BROWSER_SUPPORTED_CONNECTORS: readonly string[] = [
 ];
 
 /** Hostnames that belong to those platforms, checked against the apply URL. */
-const PROHIBITED_HOST_PATTERN = /(^|\.)(linkedin\.com|indeed\.com|indeed\.[a-z.]{2,6})$/iu;
+const PROHIBITED_HOST_PATTERN =
+  /(^|\.)(linkedin\.com|indeed\.com|indeed\.[a-z.]{2,6}|naukri\.com|naukrigulf\.com)$/iu;
 
 export function connectorIsProhibited(connectorKey: string): boolean {
   return PROHIBITED_CONNECTORS.includes((connectorKey ?? '').trim().toLowerCase());

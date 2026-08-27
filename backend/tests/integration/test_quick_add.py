@@ -76,3 +76,109 @@ def test_quick_add_requires_the_operator_role(client, auth_headers, profile, db,
 
 def test_quick_add_requires_auth(client):
     assert client.post("/api/v1/jobs/quick-add", json={}).status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# Attribution. Quick-add used to file every pasted job as `manual`, throwing
+# away the one fact the URL reliably carries.
+# ---------------------------------------------------------------------------
+def test_a_pasted_naukri_job_is_recorded_as_naukri(client, auth_headers, profile, db):
+    from sqlalchemy import select
+
+    from app.models.job import Job
+
+    response = quick_add(
+        client,
+        auth_headers,
+        url="https://www.naukri.com/job-listings-senior-backend-engineer-acme-1",
+    )
+    assert response.status_code == 201, response.text
+
+    job = db.execute(select(Job).order_by(Job.created_at.desc())).scalars().first()
+    assert job.connector_key == "naukri"
+    assert job.submission_policy_default == "prohibited"
+
+
+def test_a_pasted_naukri_job_can_never_be_handed_to_the_assistant(
+    client, auth_headers, profile, facts, db, user
+):
+    """The end the user actually cares about: it is drafted, never submitted."""
+    from sqlalchemy import select
+
+    from app.models.job import Job
+    from app.services import policy
+
+    assert (
+        quick_add(
+            client,
+            auth_headers,
+            url="https://www.naukri.com/job-listings-senior-backend-engineer-acme-1",
+        ).status_code
+        == 201
+    )
+    job = db.execute(select(Job).order_by(Job.created_at.desc())).scalars().first()
+
+    assert policy.is_hard_prohibited(job.connector_key) is True
+
+    # Hand decide() the most permissive inputs that exist: a full auto-submit
+    # grant, a perfect score, the kill-switch on, nothing else objecting. The
+    # prohibition has to survive all of it, because every other guard here is
+    # something a user can switch off.
+    from datetime import UTC, datetime
+
+    from sqlalchemy import select as _select
+
+    from app.core.enums import SubmissionPolicy
+    from app.models.user import AgentSettings, PlatformAuthorization
+
+    agent_settings = db.execute(
+        _select(AgentSettings).where(AgentSettings.user_id == user.id)
+    ).scalar_one()
+
+    decision = policy.decide(
+        job=job,
+        connector_policy=job.submission_policy_default,
+        authorization=PlatformAuthorization(
+            platform_key="naukri",
+            policy=SubmissionPolicy.AUTO_SUBMIT.value,
+            granted_at=datetime.now(UTC),
+            revoked_at=None,
+        ),
+        agent_settings=agent_settings,
+        score=100,
+        global_enabled=True,
+        applications_today=0,
+    )
+    assert decision.may_submit is False
+    assert decision.policy == SubmissionPolicy.PROHIBITED.value
+
+
+def test_a_pasted_greenhouse_job_keeps_its_ats_identity(client, auth_headers, profile, db):
+    """Attribution cuts both ways: a real ATS link is not anonymous either."""
+    from sqlalchemy import select
+
+    from app.models.job import Job
+
+    assert (
+        quick_add(
+            client, auth_headers, url="https://boards.greenhouse.io/acme/jobs/4001"
+        ).status_code
+        == 201
+    )
+    job = db.execute(select(Job).order_by(Job.created_at.desc())).scalars().first()
+    assert job.connector_key == "greenhouse"
+    # Recognising the form is not permission to submit it.
+    assert job.submission_policy_default == "review_required"
+
+
+def test_an_unrecognised_url_is_still_manual(client, auth_headers, profile, db):
+    from sqlalchemy import select
+
+    from app.models.job import Job
+
+    assert (
+        quick_add(client, auth_headers, url="https://careers.example.com/roles/9").status_code
+        == 201
+    )
+    job = db.execute(select(Job).order_by(Job.created_at.desc())).scalars().first()
+    assert job.connector_key == "manual"

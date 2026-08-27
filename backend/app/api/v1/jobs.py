@@ -250,7 +250,7 @@ def quick_add_job(payload: QuickAddIn, db: DbSession, user: RequireOperator) -> 
     """
     from app.models.profile import CandidateProfile
     from app.services import application_workflow as workflow
-    from app.services import matching, taxonomy
+    from app.services import matching, source_attribution, taxonomy
     from app.services.locations import resolve_city, resolve_country
     from app.services.normalizer import (
         compute_dedupe_hash,
@@ -265,11 +265,17 @@ def quick_add_job(payload: QuickAddIn, db: DbSession, user: RequireOperator) -> 
     country = resolve_country(payload.location_raw) or resolve_country(description[:400])
     salary_min, salary_max, currency, period = parse_salary(description)
 
+    # The host tells us which platform this is; filing everything as "manual"
+    # threw that away. A Naukri link is now recorded as Naukri and inherits its
+    # PROHIBITED policy, and a Greenhouse link inherits the fact that its form
+    # is one the assistant can actually fill.
+    connector_key, tier, policy = source_attribution.attribute(payload.url)
+
     job = Job(
-        connector_key="manual",
-        compliance_tier=ComplianceTier.MANUAL_ONLY.value,
-        submission_policy_default=SubmissionPolicy.REVIEW_REQUIRED.value,
-        external_id=f"manual:{uuid.uuid4()}",
+        connector_key=connector_key,
+        compliance_tier=tier,
+        submission_policy_default=policy,
+        external_id=f"{connector_key}:{uuid.uuid4()}",
         source_url=payload.url,
         apply_url=payload.url,
         is_direct_employer=True,
@@ -295,7 +301,7 @@ def quick_add_job(payload: QuickAddIn, db: DbSession, user: RequireOperator) -> 
         requirements=extract_requirements(description),
         visa_sponsorship_mentioned=detect_sponsorship(description),
         dedupe_hash=compute_dedupe_hash(payload.company, payload.title, country),
-        raw={"source": "quick_add"},
+        raw={"source": "quick_add", "attributed_to": connector_key},
     )
     db.add(job)
     db.flush()

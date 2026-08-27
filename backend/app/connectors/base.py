@@ -139,7 +139,7 @@ class BaseConnector(abc.ABC):
 #: not import the service layer, and a registry that could hand out a
 #: non-PROHIBITED LinkedIn connector would make the policy list decorative. The
 #: test suite asserts the two lists stay identical.
-HARD_PROHIBITED_KEYS = frozenset({"linkedin", "indeed"})
+HARD_PROHIBITED_KEYS = frozenset({"linkedin", "indeed", "naukri"})
 
 
 class ConnectorRegistry:

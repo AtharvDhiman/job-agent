@@ -261,7 +261,7 @@ def _approve(client, auth_headers, application_id, note="looks good"):
     )
 
 
-@pytest.mark.parametrize("platform", ["linkedin", "indeed"])
+@pytest.mark.parametrize("platform", ["linkedin", "indeed", "naukri"])
 def test_approving_a_prohibited_application_never_hands_it_to_the_assistant(
     client, auth_headers, assistant_headers, profile, facts, db, automation_on, platform
 ):
